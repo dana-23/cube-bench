@@ -52,21 +52,22 @@ step_by_step:
       - You will receive a textual cube state (ground truth) and an image (for reference only). Ignore any discrepancies: the text is authoritative.
 
     **Decision Rule (no ambiguity allowed):**
-      1) For each candidate (A,B,C,D), internally simulate applying the move to the textual state and estimate the resulting God's-distance d1.
+      1) For each candidate (A,B,C,D), simulate applying the move to the textual state and estimate the resulting God's-distance d1.
       2) Prefer the move with the **lowest d1** (equivalently, the largest decrease from the current distance).
       3) If multiple candidates yield the same minimal d1, break ties **deterministically by letter**: A < B < C < D.
-      4) Never output anything other than A/B/C/D.
 
     **Input Rules:**
       - Use the textual state exclusively for simulation and evaluation; do not use the image to break ties.
-      - Think step-by-step internally but do **not** reveal your chain-of-thought.
 
     **Output Format (STRICT):**
-      Return exactly one line containing only this XML tag:
+      First, show your step-by-step reasoning inside <REASONING>...</REASONING> tags. Walk through each candidate (A, B, C, D), describe the resulting state at a high level, and estimate its d1.
+
+      Then, on the final line, output exactly the answer tag:
 
       <ANSWER> A/B/C/D </ANSWER>
 
-      No explanations, no extra text, no AMBIGUOUS.
+      The final line must match this regex: ^\s*<ANSWER>\s*[ABCD]\s*</ANSWER>\s*$
+      Do not output AMBIGUOUS. Do not put anything after the </ANSWER> tag.
   user: |-
     The cube is {n_moves} moves away from being solved.
 
@@ -79,7 +80,7 @@ step_by_step:
       C: {move_C}
       D: {move_D}
 
-    Output exactly one line:
+    Show your reasoning in <REASONING>...</REASONING>, then output the final answer as:
       <ANSWER> X </ANSWER>
 
 learning_curve:
