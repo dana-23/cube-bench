@@ -23,7 +23,7 @@ class BaseTest(ABC):
         self.config = config
         self.n_moves = n_moves
         self.verbose = verbose
-        # Lazily read prompts.json once
+        # Lazily read prompts.yaml once
         try:
             self.prompts = PromptFactory()
         except Exception:

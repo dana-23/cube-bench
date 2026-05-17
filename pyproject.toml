@@ -16,6 +16,7 @@ dependencies = [
   "tqdm",
   "pycuber",
   "kociemba",
+  "pyyaml",
 ]
 readme = "README.md"
 

@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import tempfile
+import yaml
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import lru_cache
@@ -725,11 +726,11 @@ class ModelAssistant:
 
 @lru_cache(maxsize=1)
 def load_prompts() -> Dict[str, Any]:
-    path = Path("prompts.json")
+    path = Path("prompts.yaml")
     if not path.exists():
-        raise FileNotFoundError("prompts.json file not found")
+        raise FileNotFoundError("prompts.yaml file not found")
     with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
+        return yaml.safe_load(f)
 
 # --------------------------------------------------------------------------------------------------
 # 10) Tiny demo

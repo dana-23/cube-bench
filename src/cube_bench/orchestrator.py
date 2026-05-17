@@ -61,7 +61,7 @@ class TestOrchestrator:
             return test.run(num_samples)
         
         elif test_type == "reflection":
-            rp = reflection_prompts or (self.config.prompts_path.parent / "reflection.json")
+            rp = reflection_prompts or (self.config.prompts_path.parent / "reflection.yaml")
             test = ReflectionTest(
                 assistant=self.assistant,
                 config=self.config,

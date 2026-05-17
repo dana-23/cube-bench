@@ -35,7 +35,7 @@ MOVE_RE = re.compile(r"<ANSWER>\s*([URFDLB](?:2|')?)\s*</ANSWER>", re.IGNORECASE
 class SolveMovesTest(BaseTest):
     """
     Dynamic MCQ using VirtualCube: generate states on-the-fly (1 move from solved).
-    Prompt modalities: mixed | image | text (PromptFactory if available; otherwise prompts.json).
+    Prompt modalities: mixed | image | text (PromptFactory if available; otherwise prompts.yaml).
     """
     def __init__(self, assistant, config, prompt_type: str = "mixed", n_moves: int = 1, verbose: bool = False):
         super().__init__(assistant, config, n_moves, verbose)
@@ -163,9 +163,9 @@ class SolveMovesTest(BaseTest):
             sys_prompt, user_prompt = PromptFactory.get("prediction", prompt_type=self.prompt_type, **kwargs)
             return user_prompt, sys_prompt
 
-        # Fallback to prompts.json that BaseTest loads into self.prompts
+        # Fallback to prompts.yaml that BaseTest loads into self.prompts
         if self.prompt_type not in self.prompts.get(self.test_type, {}):
-            raise ValueError(f"Prompt type '{self.prompt_type}' not found under '{self.test_type}' in prompts.json")
+            raise ValueError(f"Prompt type '{self.prompt_type}' not found under '{self.test_type}' in prompts.yaml")
         sys_prompt = self.prompts[self.test_type][self.prompt_type]["sys"]
         user_tpl  = self.prompts[self.test_type][self.prompt_type]["user"]
         return user_tpl.format(**kwargs), sys_prompt
@@ -239,7 +239,7 @@ class SolveMovesTest(BaseTest):
                 "meta": {
                     "n_moves": self.n_moves,
                     "generator": "VirtualCube",
-                    "prompt_source": "PromptFactory" if _HAS_FACTORY else "prompts.json",
+                    "prompt_source": "PromptFactory" if _HAS_FACTORY else "prompts.yaml",
                 },
             },
         )

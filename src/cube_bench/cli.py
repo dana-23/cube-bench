@@ -46,7 +46,7 @@ def main():
     parser.add_argument("--backend", default="hf", choices=["hf","vllm"])
     parser.add_argument("--results", type=Path, default=Path("results"))
     parser.add_argument("--dataset", type=Path, default=Path("test-data/rubiks_dataset/rubiks_dataset.json"))
-    parser.add_argument("--prompts", type=Path, default=Path("scripts/prompts/prompts.json"))
+    parser.add_argument("--prompts", type=Path, default=Path("scripts/prompts/prompts.yaml"))
 
     # NEW: reflection-specific knobs
     parser.add_argument("--reflection-type", default="Redacted",

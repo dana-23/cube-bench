@@ -7,6 +7,8 @@ import logging
 from pathlib import Path
 from typing import Any, Dict
 
+import yaml
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,4 +33,4 @@ def save_results(file_path: Path, results: Dict[str, Any]):
 def load_prompts(prompts_path: Path) -> Dict[str, Any]:
     if not prompts_path.exists():
         raise FileNotFoundError(f"Prompts file not found at {prompts_path}")
-    return json.loads(prompts_path.read_text(encoding="utf-8"))
+    return yaml.safe_load(prompts_path.read_text(encoding="utf-8"))

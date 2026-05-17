@@ -8,6 +8,7 @@ import logging
 import math
 import re
 import time
+import yaml
 from pathlib import Path
 from statistics import mean
 from typing import Any, Dict, List, Optional, Tuple
@@ -36,7 +37,7 @@ def _pick_opt(text: Optional[str]) -> Optional[str]:
 
 
 def _load_reflection_bundle(path: Path, reflection_type: str) -> Dict[str, str]:
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
     if reflection_type not in data:
         raise KeyError(f"'{reflection_type}' not in {list(data.keys())}")
     bundle = data[reflection_type]
