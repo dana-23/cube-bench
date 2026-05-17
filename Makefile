@@ -18,7 +18,7 @@ install:
 	$(PIP) install -e .
 
 build:
-	cube-bench --build
+	cube-bench build=True
 
 setup: install build
 
