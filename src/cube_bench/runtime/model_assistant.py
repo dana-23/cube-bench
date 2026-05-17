@@ -622,27 +622,62 @@ def get_strategy(name: str, engine: str, REGISTRY: Dict[str, ModelSpec]) -> Mode
 
 class ModelAssistant:
     MODEL_REGISTRY: Dict[str, ModelSpec] = {
-        "gemma3": ModelSpec("gemma3", "google/gemma-3-27b-it", GemmaStrategy, VllmStrategy),
-        "gemma3-4b": ModelSpec("gemma3-4b", "google/gemma-3-4b-it", GemmaStrategy, VllmStrategy),
-        "llama4": ModelSpec("llama4", "meta-llama/Llama-4-Scout-17B-16E-Instruct", LlamaStrategy, VllmStrategy),
-        "qwen2.5-7b": ModelSpec("qwen2.5-7b", "Qwen/Qwen2.5-VL-7B-Instruct", QwenVLStrategy, VllmStrategy),
-        "qwen2.5-32b": ModelSpec("qwen2.5-32b", "Qwen/Qwen2.5-VL-32B-Instruct", QwenVLStrategy, VllmStrategy),
-        "qwen3-vl-thinking": ModelSpec("qwen3-vl-thinking", "Qwen/Qwen3-VL-30B-A3B-Thinking", QwenVLStrategy, VllmStrategy),
-        "gemini2.5-pro": ModelSpec("gemini-pro", "gemini-2.5-pro", GeminiStrategy, GeminiStrategy, supports_image=True),
-        # InternVL3 (HF only for now)
+        "gemma3": ModelSpec(
+            name="gemma3",
+            path="google/gemma-3-27b-it",
+            strategy_hf=GemmaStrategy,
+            strategy_vllm=VllmStrategy,
+        ),
+        "gemma3-4b": ModelSpec(
+            name="gemma3-4b",
+            path="google/gemma-3-4b-it",
+            strategy_hf=GemmaStrategy,
+            strategy_vllm=VllmStrategy,
+        ),
+        "llama4": ModelSpec(
+            name="llama4",
+            path="meta-llama/Llama-4-Scout-17B-16E-Instruct",
+            strategy_hf=LlamaStrategy,
+            strategy_vllm=VllmStrategy,
+        ),
+        "qwen2.5-7b": ModelSpec(
+            name="qwen2.5-7b",
+            path="Qwen/Qwen2.5-VL-7B-Instruct",
+            strategy_hf=QwenVLStrategy,
+            strategy_vllm=VllmStrategy,
+        ),
+        "qwen2.5-32b": ModelSpec(
+            name="qwen2.5-32b",
+            path="Qwen/Qwen2.5-VL-32B-Instruct",
+            strategy_hf=QwenVLStrategy,
+            strategy_vllm=VllmStrategy,
+        ),
+        "qwen3-vl-thinking": ModelSpec(
+            name="qwen3-vl-thinking",
+            path="Qwen/Qwen3-VL-30B-A3B-Thinking",
+            strategy_hf=QwenVLStrategy,
+            strategy_vllm=VllmStrategy,
+        ),
+        "gemini2.5-pro": ModelSpec(
+            name="gemini-pro",
+            path="gemini-2.5-pro",
+            strategy_hf=GeminiStrategy,
+            strategy_vllm=GeminiStrategy,
+            supports_image=True,
+        ),
         "internvl3_5-38b": ModelSpec(
-            "internvl3_5-38b",
-            "OpenGVLab/InternVL3_5-38B",
-            InternVL3_5Strategy,
-            None,
+            name="internvl3_5-38b",
+            path="OpenGVLab/InternVL3_5-38B",
+            strategy_hf=InternVL3_5Strategy,
+            strategy_vllm=None,
             dtype=torch.bfloat16,
             supports_image=True,
         ),
         "glm4.5v": ModelSpec(
-            "glm4.5v",
-            "Zai/GLM-4.5V",  # or "zai-org/GLM-4.5V"
-            GLM45VStrategy,
-            VllmStrategy,                 # vLLM works if your build has GLM-4.5V recipe; fall back to 'hf' if not
+            name="glm4.5v",
+            path="Zai/GLM-4.5V",
+            strategy_hf=GLM45VStrategy,
+            strategy_vllm=VllmStrategy,
             dtype=torch.bfloat16,
             supports_image=True,
         ),
