@@ -28,7 +28,7 @@ from pycuber.solver import CFOPSolver
 from PIL import Image, ImageDraw, ImageEnhance
 import io, base64
 import random
-# import cube_bench.optimal.solver as sv
+import cube_bench.optimal.solver as sv
 
 # ---------------------------------------------------------------------------
 # Configuration helpers

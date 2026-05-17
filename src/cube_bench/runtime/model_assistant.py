@@ -26,6 +26,10 @@ torch.set_float32_matmul_precision("high")
 
 from PIL import Image
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 logger = logging.getLogger("assistant")
 logging.basicConfig(
     level=os.getenv("LOGLEVEL", "INFO"),
@@ -532,64 +536,49 @@ class GeminiStrategy(ModelStrategy):
         image: Optional[Union[Image.Image, Path]],
         gen_cfg: GenerationConfig,
         reference: str = "",
-    ) -> Tuple[str, Dict[str, int]]:
-        """
-        Generates a response and returns it along with token usage statistics.
-        Returns:
-            A tuple containing:
-            - The response text (str).
-            - A dictionary with token counts (Dict[str, int]).
-        """
-        import google.generativeai as genai
+    ) -> str:
+        from google import genai
+        from google.genai import types
 
-        model = genai.GenerativeModel(
-            model_name=self.spec.path,
-            system_instruction=system_prompt,
-            generation_config={"max_output_tokens": gen_cfg.max_new_tokens},
-        )
+        client = genai.Client()  # picks up GEMINI_API_KEY from env
+
         contents: List[Any] = [user_prompt]
         if image is not None:
             contents.append(_as_pil(image))
 
-        # Estimate input tokens BEFORE the call
-        input_token_estimate = model.count_tokens(contents).total_tokens
+        config = types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            max_output_tokens=gen_cfg.max_new_tokens,
+            temperature=gen_cfg.temperature,
+            top_p=gen_cfg.top_p,
+        )
+
+        input_token_estimate = client.models.count_tokens(
+            model=self.spec.path, contents=contents
+        ).total_tokens
         logger.info(f"[gemini] Estimated input tokens: {input_token_estimate}")
 
-        # Make the API call
-        resp = model.generate_content(contents)
-        response_text = ""
-        token_usage = {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "total_tokens": 0,
-        }
+        resp = client.models.generate_content(
+            model=self.spec.path,
+            contents=contents,
+            config=config,
+        )
 
-        # Get exact token counts AFTER the call from usage metadata
+        response_text = resp.text if resp.candidates else "Response was blocked."
+
         try:
-            if resp.candidates:
-                response_text = resp.text
-            else:
-                response_text = "Response was blocked." # Or handle as needed
-
-            # The usage_metadata is available even if the response is blocked
-            if hasattr(resp, 'usage_metadata'):
-                token_usage["input_tokens"] = resp.usage_metadata.prompt_token_count
-                token_usage["output_tokens"] = resp.usage_metadata.candidates_token_count
-                token_usage["total_tokens"] = resp.usage_metadata.total_token_count
-        
+            usage = resp.usage_metadata
+            input_tokens = usage.prompt_token_count or 0
+            output_tokens = usage.candidates_token_count or 0
+            total_tokens = usage.total_token_count or 0
+            # total - (input + output) captures thinking tokens for reasoning models
+            thinking_tokens = total_tokens - (input_tokens + output_tokens)
             logger.info(
-                f"\n[gemini] Estimated thinking tokens: {token_usage['total_tokens'] - (token_usage['input_tokens'] + token_usage['output_tokens'])}"
-                f"\n[gemini] Estimated output tokens: {token_usage['output_tokens']}"
+                f"\n[gemini] Estimated thinking tokens: {thinking_tokens}"
+                f"\n[gemini] Estimated output tokens: {output_tokens}"
             )
-
         except Exception as e:
             logger.warning(f"[gemini] Could not retrieve usage metadata from response. Error: {e}")
-            # The response text might still be available in some error cases
-            if hasattr(resp, 'text'):
-                response_text = resp.text
-
-        # print(f"Token usuage: {token_usage}")
-        # print(f"Model's full response: {resp}")
 
         return response_text
 
@@ -660,8 +649,15 @@ class ModelAssistant:
             strategy_vllm=VllmStrategy,
         ),
         "gemini2.5-pro": ModelSpec(
-            name="gemini-pro",
+            name="gemini-2.5-pro",
             path="gemini-2.5-pro",
+            strategy_hf=GeminiStrategy,
+            strategy_vllm=GeminiStrategy,
+            supports_image=True,
+        ),
+        "gemini3.1-pro": ModelSpec(
+            name="gemini-3.1-pro",
+            path="gemini-3.1-pro-preview",
             strategy_hf=GeminiStrategy,
             strategy_vllm=GeminiStrategy,
             supports_image=True,

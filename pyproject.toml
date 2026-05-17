@@ -17,6 +17,7 @@ dependencies = [
   "pycuber",
   "kociemba",
   "pyyaml",
+  "google-genai",
 ]
 readme = "README.md"
 

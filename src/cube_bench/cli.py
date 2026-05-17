@@ -23,13 +23,17 @@ def setup_logging(level: str = "INFO", log_file: Path | None = None, quiet: bool
         force=True # Good practice to ensure previous configs are overwritten
     )
 
+    # Silence noisy third-party loggers even when root is at DEBUG
+    for noisy in ("matplotlib", "PIL", "urllib3", "httpx", "httpcore", "fontTools"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
 def main():
     parser = argparse.ArgumentParser(description="Run Rubik's Cube MLLM evaluations")
 
     parser.add_argument("--build", action="store_true")
     parser.add_argument("--model", required=False, type=str,
         choices=[
-            "qwen2.5-7b","qwen2.5-32b","gemma3","gemma3-4b","llama4",
+            "qwen2.5-7b","qwen2.5-32b","gemma3","gemma3-4b","llama4","gemini3.1-pro",
             "gemini2.5-pro","gemini2.5-flash","internvl3_5-38b","glm4.5v","qwen3-vl-thinking"
         ])
     parser.add_argument("--test", required=False, type=str,
