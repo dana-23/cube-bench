@@ -12,6 +12,7 @@ __pycache__/
 .venv/
 venv/
 env/
+.env
 
 # Builds / packaging
 build/
