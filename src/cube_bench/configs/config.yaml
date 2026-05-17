@@ -1,0 +1,27 @@
+defaults:
+  - test: prediction
+  - paths: default
+  - _self_
+
+# Model name (any registered model in ModelAssistant)
+model: gemini3.1-pro
+
+# Backend: hf | vllm
+backend: hf
+
+# Global run params
+samples: 100
+verbose: 0           # 0=warnings only, 1=info, 2=info+per-sample
+log_file: null
+
+# Build phase: if true, just preload optimal solver tables and exit
+build: false
+
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
+  job:
+    chdir: false

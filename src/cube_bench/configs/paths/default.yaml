@@ -1,0 +1,5 @@
+# `null` resolves to the packaged file inside cube_bench/prompts/.
+results_dir: ${hydra:runtime.output_dir}
+prompts_path: null
+reflection_prompts: null
+dataset_path: test-data/rubiks_dataset/rubiks_dataset.json

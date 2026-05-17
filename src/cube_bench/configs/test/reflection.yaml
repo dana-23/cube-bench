@@ -1,0 +1,6 @@
+name: reflection
+reflection_type: Redacted          # Unguided | Redacted | Unredacted
+prompt_type: image
+max_reflections: null
+reflection_prompts: null           # null => paths.reflection_prompts
+n_moves: 1

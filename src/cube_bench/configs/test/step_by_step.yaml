@@ -1,0 +1,6 @@
+name: step-by-step
+n_moves: 8
+idk_enabled: false
+idk_weight: 0.25
+idk_policy: teacher_on_abstain     # teacher_on_abstain | skip_item
+idk_conf_threshold: null

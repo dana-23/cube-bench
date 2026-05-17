@@ -42,3 +42,5 @@ src/cube_bench/optimal/graph/**
 runs/
 artifacts/
 data/
+outputs/
+multirun/

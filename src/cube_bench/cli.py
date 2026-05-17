@@ -1,134 +1,108 @@
-# cube_bench/cli.py
-import argparse
+from __future__ import annotations
+
 import logging
 from pathlib import Path
+from typing import List
+
+import hydra
+from omegaconf import DictConfig, OmegaConf
 
 from .config import Config
 
-def setup_logging(level: str = "INFO", log_file: Path | None = None, quiet: bool = False):
-    handlers = [] # Start with an empty list
-    
-    # Only add the console handler if NOT in quiet mode
-    if not quiet:
-        handlers.append(logging.StreamHandler())
-        
-    # File handler is added regardless of quiet mode (standard CLI practice)
+ALL_TESTS = [
+    "verification",
+    "reconstruction",
+    "prediction",
+    "step_by_step",
+    "learning_curve",
+    "move_effect",
+    "invariance_sweep",
+    "reflection",
+]
+
+
+def setup_logging(verbosity: int, log_file: str | None = None) -> None:
+    """0 = warnings/errors only; 1+ = info-level progress."""
+    level = logging.INFO if verbosity >= 1 else logging.WARNING
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
     if log_file:
         handlers.append(logging.FileHandler(log_file, encoding="utf-8"))
-        
+
     logging.basicConfig(
-        level=getattr(logging, level.upper(), logging.INFO),
+        level=level,
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
         handlers=handlers,
-        force=True # Good practice to ensure previous configs are overwritten
+        force=True,
     )
-
-    # Silence noisy third-party loggers even when root is at DEBUG
     for noisy in ("matplotlib", "PIL", "urllib3", "httpx", "httpcore", "fontTools"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
-def main():
-    parser = argparse.ArgumentParser(description="Run Rubik's Cube MLLM evaluations")
 
-    parser.add_argument("--build", action="store_true")
-    parser.add_argument("--model", required=False, type=str,
-        choices=[
-            "qwen2.5-7b","qwen2.5-32b","gemma3","gemma3-4b","llama4","gemini3.1-pro",
-            "gemini2.5-pro","gemini2.5-flash","internvl3_5-38b","glm4.5v","qwen3-vl-thinking"
-        ])
-    parser.add_argument("--test", required=False, type=str,
-        choices=[
-            "prediction","verification","reconstruction","step-by-step",
-            "learning-curve","move-effect","invariance-sweep",
-            "persistence-blackout","reflection",
-            "all"
-        ])
-    parser.add_argument("--difficulty", default="easy", choices=["easy","medium","hard","all"])
-    parser.add_argument("--prompt", default="image", choices=["mixed","image","text"])
-    parser.add_argument("--samples","-n", type=int, default=100)
-    parser.add_argument("--moves","-m", type=int, default=3)
-    parser.add_argument("--backend", default="hf", choices=["hf","vllm"])
-    parser.add_argument("--results", type=Path, default=Path("results"))
-    parser.add_argument("--dataset", type=Path, default=Path("test-data/rubiks_dataset/rubiks_dataset.json"))
-    parser.add_argument("--prompts", type=Path, default=Path("scripts/prompts/prompts.yaml"))
+def _load_test_configs_for_all() -> List[DictConfig]:
+    """Load each test config in isolation for `test=all`."""
+    base = Path(__file__).parent / "configs" / "test"
+    return [OmegaConf.load(base / f"{t}.yaml") for t in ALL_TESTS]
 
-    # NEW: reflection-specific knobs
-    parser.add_argument("--reflection-type", default="Redacted",
-                        choices=["Unguided","Redacted","Unredacted"],
-                        help="Reflection bundle to use from reflection prompts JSON.")
-    parser.add_argument("--reflection-prompts", type=Path,
-                        help="Path to reflection prompt bundles JSON.")
-    parser.add_argument("--max-reflections", type=int, default=None,
-                        help="Cap number of wrong items to reflect on (cost control).")
 
-    # logging
-    parser.add_argument("--log", default="INFO", choices=["DEBUG","INFO","WARNING","ERROR","CRITICAL"])
-    parser.add_argument("--log-file", type=Path)
-    parser.add_argument("--quiet", action="store_true")
+@hydra.main(version_base=None, config_path="configs", config_name="config")
+def main(cfg: DictConfig) -> None:
+    setup_logging(cfg.verbose, cfg.log_file)
 
-    args = parser.parse_args()
-    setup_logging(args.log, args.log_file, quiet=args.quiet)
-    config = Config(dataset_path=args.dataset, prompts_path=args.prompts, results_dir=args.results)
+    if cfg.build:
+        # Preload optimal solver pruning tables and exit.
+        import cube_bench.optimal.solver  # noqa: F401
+        return
 
-    orch = None
+    pkg_prompts_dir = Path(__file__).parent / "prompts"
+    prompts_path = Path(cfg.paths.prompts_path) if cfg.paths.prompts_path else pkg_prompts_dir / "prompts.yaml"
+    reflection_prompts = (
+        Path(cfg.paths.reflection_prompts)
+        if cfg.paths.reflection_prompts
+        else pkg_prompts_dir / "reflection.yaml"
+    )
+
+    config = Config(
+        dataset_path=Path(cfg.paths.dataset_path),
+        prompts_path=prompts_path,
+        results_dir=Path(cfg.paths.results_dir),
+    )
+
+    from .orchestrator import TestOrchestrator
+    orch = TestOrchestrator(model_name=cfg.model, config=config, backend=cfg.backend)
+
+    test_configs = (
+        _load_test_configs_for_all() if cfg.test.name == "all" else [cfg.test]
+    )
+
+    if cfg.test.name == "all":
+        print(f"🚀 Running ALL tests: {[c.name for c in test_configs]}")
+
+    verbose_flag = cfg.verbose >= 2
+
+    results_summary: dict[str, str] = {}
     try:
-        if args.build:
-            import cube_bench.optimal.solver as sv
-            return
-
-        from .orchestrator import TestOrchestrator
-
-        orch = TestOrchestrator(model_name=args.model, config=config, backend=args.backend)
-        if args.test == "all":
-            tests_to_run = [
-                "verification",
-                "reconstruction",
-                "prediction",
-                "step-by-step",
-                "learning-curve",
-                "move-effect",
-                "invariance-sweep",
-                "reflection"
-            ]
-            print(f"🚀 Running ALL tests: {tests_to_run}")
-
-        else:
-            tests_to_run = [args.test]
-            
-
-        results_summary = {}
-        for test_name in tests_to_run:
-            print(f"\n=== ▶️ Starting Test: {test_name} ===")
+        for test_cfg in test_configs:
+            tname = test_cfg.name
+            print(f"\n=== ▶️ Starting Test: {tname} ===")
             try:
-                result = orch.run_test(
-                    test_type=test_name,
-                    difficulty=args.difficulty,
-                    prompt_type=args.prompt,
-                    num_samples=args.samples,
-                    n_moves=args.moves,
-                    verbose=(args.log == "DEBUG"),
-                    reflection_type=args.reflection_type,
-                    reflection_prompts=args.reflection_prompts,
-                    max_reflections=args.max_reflections,
+                orch.run_test(
+                    test_cfg=test_cfg,
+                    num_samples=cfg.samples,
+                    verbose=verbose_flag,
+                    reflection_prompts_default=reflection_prompts,
                 )
-                results_summary[test_name] = "✅ Completed"
+                results_summary[tname] = "✅ Completed"
             except Exception as e:
-                logging.error(f"Test {test_name} failed: {e}")
-                results_summary[test_name] = "❌ Failed"
+                logging.exception(f"Test {tname} failed: {e}")
+                results_summary[tname] = "❌ Failed"
 
-        # 4. Print a final summary
-        print("\n" + "="*40)
+        print("\n" + "=" * 40)
         print("📊 EXECUTION SUMMARY")
-        print("="*40)
+        print("=" * 40)
         for t, status in results_summary.items():
             print(f"{t:<20} {status}")
-            
-    except Exception:
-        logging.exception("An error occurred during evaluation")
-        raise
     finally:
-        if orch:
-            orch.cleanup()
+        orch.cleanup()
 
 
 if __name__ == "__main__":

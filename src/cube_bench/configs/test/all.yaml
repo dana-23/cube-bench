@@ -1,0 +1,3 @@
+# Marker config: cli.py expands `test=all` into a sequential run over every
+# other test config (each loaded with its own defaults).
+name: all

@@ -1,0 +1,5 @@
+name: invariance-sweep
+n_moves: 3
+balance_gold_letters: true
+add_labels: true
+max_new_tokens: 64
