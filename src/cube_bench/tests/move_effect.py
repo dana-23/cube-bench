@@ -1,21 +1,15 @@
-# ==================================
-# file: cube_bench/tests/move_effect.py
-# ==================================
 from __future__ import annotations
+
 import logging
+import math
 import random
 import re
-import math
 from collections import Counter, defaultdict, deque
-from datetime import datetime
-from functools import lru_cache
 from typing import Dict, List, Tuple
 
-import kociemba
 from tqdm import tqdm
 
 from ..core import BaseTest
-from ..io import save_results
 from cube_bench.sim.cube_simulator import VirtualCube
 
 logger = logging.getLogger(__name__)
@@ -35,12 +29,10 @@ class MoveEffectTest(BaseTest):
     TAG_RE = re.compile(r"<([ABCD])>\s*(DECREASE|NO[_ ]?CHANGE|INCREASE)\s*</\1>", re.IGNORECASE)
     CLASSES = ("DECREASE", "NO_CHANGE", "INCREASE")
     SLOTS = "ABCD"
+    test_type = "move_effect"
 
     def __init__(self, assistant, config, n_moves: int = 2, verbose: bool = False):
         super().__init__(assistant, config, n_moves, verbose)
-        self.test_type = "move_effect"
-        self.n_moves = n_moves
-        self.verbose = verbose
 
         # Global fairness tracking
         self.double_cycle = ["INCREASE", "NO_CHANGE", "DECREASE"]  # fallback cycle
@@ -404,12 +396,12 @@ class MoveEffectTest(BaseTest):
                 self.depth_presented_counts[d][lbl] += 1
 
             centers = self._face_centers(cube)
-            state_text = cube._cube.__str__()
+            state_text = self.state_text(cube)
             sys_prompt = self._sys_prompt()
             user_prompt = self._user_prompt(centers, state_text, options)
 
-            response = self.assistant.generate(
-                user_prompt=user_prompt, system_prompt=sys_prompt, image=None, max_new_tokens=2**16
+            response = self.ask(
+                user_prompt=user_prompt, system_prompt=sys_prompt, image=None,
             )
 
             preds = {m.group(1).upper(): m.group(2).upper().replace(" ", "_")
@@ -574,10 +566,7 @@ class MoveEffectTest(BaseTest):
         }
 
         out = {
-            "model_name": self.assistant.get_name(),
-            "test_type": self.test_type,
             "n_moves": self.n_moves,
-            "timestamp": datetime.now().isoformat(),
             "micro_acc": micro_acc,
             "macro_f1": macro_f1,
             "kappa": kappa,
@@ -597,7 +586,7 @@ class MoveEffectTest(BaseTest):
             "num_samples": num_samples,
             "fairness_metrics": fairness_metrics,
         }
-        save_results(self.config.results_dir / f"{self.test_type}.json", out)
+        self.save(out)
         logger.info("Move-Effect micro-accuracy: %.3f | macro-F1: %.3f", micro_acc, macro_f1)
         logger.info("round-robin/double debt (couldn’t honor): %s", dict(self.class_debt))
         logger.info("presented class totals: %s", dict(self.presented_counts))
