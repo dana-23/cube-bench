@@ -45,3 +45,6 @@ data/
 outputs/
 multirun/
 results/
+
+# Bash scripts (Personel convenience only)
+scripts/

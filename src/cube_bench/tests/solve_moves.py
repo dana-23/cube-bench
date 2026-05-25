@@ -23,15 +23,17 @@ class SolveMovesTest(BaseTest):
         self.prompt_type = prompt_type
 
     def _build_sample(self, idx: int) -> Dict[str, Any]:
-        if self.n_moves != 1:
-            raise ValueError(
-                "SolveMovesTest currently supports n_moves==1. "
-                "For >1, integrate a teacher solver (e.g., Kociemba) to get the gold first move."
-            )
-
         cube = VirtualCube()
-        scramble = cube.scramble(random_seed=idx, n_moves=1)
-        teacher_move = self.teacher_first_move(scramble)
+        scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves)
+
+        if self.n_moves == 1:
+            teacher_move = self.teacher_first_move(scramble)
+        else:
+            # Kociemba-optimal first move (cube.solve() returns "R U R'" etc.)
+            optimal_path = cube.solve().split()
+            if not optimal_path:
+                raise RuntimeError(f"Optimal solver returned empty path for sample {idx}")
+            teacher_move = optimal_path[0]
 
         rng = random.Random(idx)
         forced = "ABCD"[idx % 4]

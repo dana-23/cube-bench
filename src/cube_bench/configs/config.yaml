@@ -4,14 +4,14 @@ defaults:
   - _self_
 
 # Model name (any registered model in ModelAssistant)
-model: gemini3.1-pro
+model: claude-sonnet-4.5
 
 # Backend: hf | vllm
 backend: hf
 
 # Global run params
-samples: 100
-verbose: 0           # 0=warnings only, 1=info, 2=info+per-sample
+samples: 10
+verbose: 1 # 0=warnings only, 1=info+sample
 log_file: null
 
 # Build phase: if true, just preload optimal solver tables and exit
@@ -21,7 +21,7 @@ hydra:
   run:
     dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
   sweep:
-    dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: multirun/${now:%Y-%m-%d}/${test.name}
     subdir: ${hydra.job.num}
   job:
     chdir: false
