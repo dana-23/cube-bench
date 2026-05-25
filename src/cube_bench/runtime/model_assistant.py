@@ -1,6 +1,6 @@
 # =================================================================================================
 #  Modular Model-Strategy Framework
-#  ---------------------------------------------------------------------------------
+#  -
 #  - One registry line → new model
 #  - Shared prompt builder & utilities
 #  - HuggingFace (HF) or vLLM engines
@@ -36,7 +36,7 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
 )
 
-# ---- Optional imports (keep file importable without deps)
+# Optional imports (keep file importable without deps)
 try:
     from transformers import (
         AutoProcessor,
@@ -58,9 +58,8 @@ except Exception as e:  # pragma: no cover
 logging.getLogger("vllm").setLevel(logging.WARNING)
 logging.getLogger("vllm.core").setLevel(logging.WARNING)
 
-# --------------------------------------------------------------------------------------------------
+
 # 1) Dataclasses & small utilities
-# --------------------------------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class ModelSpec:
@@ -107,9 +106,8 @@ def _to_device(batch: Any, device: torch.device, dtype: Optional[torch.dtype] = 
         return out
     return batch
 
-# --------------------------------------------------------------------------------------------------
+
 # 2) Prompt builder (single source of truth)
-# --------------------------------------------------------------------------------------------------
 
 class PromptBuilder:
     def __init__(self, processor: "AutoProcessor") -> None:
@@ -198,9 +196,8 @@ class PromptBuilder:
         return req
 
 
-# --------------------------------------------------------------------------------------------------
+
 # 3) Strategy base class
-# --------------------------------------------------------------------------------------------------
 
 class ModelStrategy(ABC):
     def __init__(self, spec: ModelSpec):
@@ -210,7 +207,7 @@ class ModelStrategy(ABC):
         self.prompt_builder: Optional[PromptBuilder] = None
         self._device_for_inputs: str = "cpu"   # where to stage inputs
 
-    # ---- Lifecycle hooks
+    #  Lifecycle hooks
     @abstractmethod
     def load(self) -> None:
         pass
@@ -226,7 +223,7 @@ class ModelStrategy(ABC):
     ) -> str:
         pass
 
-    # ---- Helpers
+    #  Helpers
     def _ensure_processor(self) -> None:
         assert AutoProcessor is not None, "transformers not installed"
         # InternVL needs its remote (non-fast) tokenizer with image tokens.
@@ -258,9 +255,8 @@ class ModelStrategy(ABC):
         self.model = self.processor = self.prompt_builder = None  # type: ignore
         torch.cuda.empty_cache()
 
-# --------------------------------------------------------------------------------------------------
+
 # 4) HuggingFace base strategy (shared generation & optional batching)
-# --------------------------------------------------------------------------------------------------
 
 class HuggingFaceStrategy(ModelStrategy):
     def load(self) -> None:
@@ -362,7 +358,7 @@ class HuggingFaceStrategy(ModelStrategy):
             results.append(self.processor.decode(gen_ids, skip_special_tokens=True))
         return results
 
-# ---- concrete HF models
+# concrete HF models
 
 class GemmaStrategy(HuggingFaceStrategy):
     def _load_model_instance(self):
@@ -439,7 +435,7 @@ class QwenVLStrategy(HuggingFaceStrategy):
         return output_text[0] if output_text else ""
 
 
-# ---- InternVL3 (HF) ----
+# InternVL3 (HF)
 
 class InternVL3_5Strategy(HuggingFaceStrategy):
     """
@@ -454,7 +450,7 @@ class InternVL3_5Strategy(HuggingFaceStrategy):
             trust_remote_code=True,
             device_map="auto").eval()
 
-# ---- GLM-4.5V (HF) ----
+# GLM-4.5V (HF)
 
 class GLM45VStrategy(HuggingFaceStrategy):
     """
@@ -470,9 +466,8 @@ class GLM45VStrategy(HuggingFaceStrategy):
         ).eval()
 
 
-# --------------------------------------------------------------------------------------------------
+
 # 5) vLLM local strategy
-# --------------------------------------------------------------------------------------------------
 
 class VllmStrategy(ModelStrategy):
     def load(self) -> None:
@@ -521,9 +516,8 @@ class VllmStrategy(ModelStrategy):
         out = self.model.generate([req], sampling_params=params, use_tqdm=False)[0]
         return out.outputs[0].text.strip()
 
-# --------------------------------------------------------------------------------------------------
+
 # 6) Remote Gemini (API) strategy – optional, off GPU
-# --------------------------------------------------------------------------------------------------
 
 class GeminiStrategy(ModelStrategy):
     def load(self) -> None:
@@ -582,9 +576,160 @@ class GeminiStrategy(ModelStrategy):
 
         return response_text
 
-# --------------------------------------------------------------------------------------------------
+
+# 6b) Remote OpenAI (API) strategy – optional, off GPU
+
+class OpenAIStrategy(ModelStrategy):
+    def load(self) -> None:
+        logger.info("[openai] remote strategy initialized - will use API key from env")
+
+    @staticmethod
+    def _image_to_data_url(image: Union[Image.Image, Path, str]) -> str:
+        import base64
+        from io import BytesIO
+
+        pil = _as_pil(image)
+        buf = BytesIO()
+        pil.save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        return f"data:image/png;base64,{b64}"
+
+    def generate(
+        self,
+        user_prompt: str,
+        system_prompt: str,
+        image: Optional[Union[Image.Image, Path]],
+        gen_cfg: GenerationConfig,
+        reference: str = "",
+    ) -> str:
+        from openai import OpenAI
+
+        client = OpenAI()  # picks up OPENAI_API_KEY from env
+
+        user_content: List[Dict[str, Any]] = [{"type": "text", "text": user_prompt}]
+        if image is not None:
+            user_content.append({
+                "type": "image_url",
+                "image_url": {"url": self._image_to_data_url(image)},
+            })
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ]
+
+        resp = client.chat.completions.create(
+            model=self.spec.path,
+            messages=messages,
+            max_completion_tokens=gen_cfg.max_new_tokens,
+            temperature=gen_cfg.temperature,
+            top_p=gen_cfg.top_p,
+        )
+
+        try:
+            usage = resp.usage
+            prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+            completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+            total_tokens = getattr(usage, "total_tokens", 0) or 0
+            reasoning_tokens = total_tokens - (prompt_tokens + completion_tokens)
+            logger.info(
+                f"\n[openai] Input tokens: {prompt_tokens}"
+                f"\n[openai] Output tokens: {completion_tokens}"
+                f"\n[openai] Reasoning/other tokens: {reasoning_tokens}"
+            )
+        except Exception as e:
+            logger.warning(f"[openai] Could not retrieve usage metadata. Error: {e}")
+
+        choice = resp.choices[0] if resp.choices else None
+        return choice.message.content if choice and choice.message else "Response was blocked."
+
+
+# 6c) Remote Anthropic Claude (API) strategy – optional, off GPU
+
+class ClaudeStrategy(ModelStrategy):
+    # Per-model output-token caps from the Anthropic API.
+    MAX_OUTPUT_TOKENS: Dict[str, int] = {
+        "claude-opus-4-5": 32000,
+        "claude-sonnet-4-5": 64000,
+        "claude-haiku-4-5": 64000,
+    }
+    DEFAULT_MAX_OUTPUT_TOKENS = 32000
+
+    def load(self) -> None:
+        logger.info("[claude] remote strategy initialized - will use API key from env")
+
+    @staticmethod
+    def _image_to_b64(image: Union[Image.Image, Path, str]) -> str:
+        import base64
+        from io import BytesIO
+
+        pil = _as_pil(image)
+        buf = BytesIO()
+        pil.save(buf, format="PNG")
+        return base64.b64encode(buf.getvalue()).decode("ascii")
+
+    def generate(
+        self,
+        user_prompt: str,
+        system_prompt: str,
+        image: Optional[Union[Image.Image, Path]],
+        gen_cfg: GenerationConfig,
+        reference: str = "",
+    ) -> str:
+        import anthropic
+
+        client = anthropic.Anthropic()
+
+        user_content: List[Dict[str, Any]] = []
+        if image is not None:
+            user_content.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": self._image_to_b64(image),
+                },
+            })
+        user_content.append({"type": "text", "text": user_prompt})
+
+        # Anthropic rejects passing both temperature and top_p; send one.
+        sampling_kwargs: Dict[str, Any] = {"temperature": gen_cfg.temperature}
+        if gen_cfg.top_p != 1.0:
+            sampling_kwargs = {"top_p": gen_cfg.top_p}
+
+        cap = self.MAX_OUTPUT_TOKENS.get(self.spec.path, self.DEFAULT_MAX_OUTPUT_TOKENS)
+        max_tokens = min(gen_cfg.max_new_tokens, cap)
+
+        # Use streaming — required by SDK when max_tokens is large enough that
+        # the request could exceed the 10-minute non-streaming timeout.
+        with client.messages.stream(
+            model=self.spec.path,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_content}],
+            max_tokens=max_tokens,
+            # thinking={"type": "enabled", "budget_tokens": 10000},
+            **sampling_kwargs,
+        ) as stream:
+            final = stream.get_final_message()
+
+        try:
+            usage = final.usage
+            input_tokens = getattr(usage, "input_tokens", 0) or 0
+            output_tokens = getattr(usage, "output_tokens", 0) or 0
+            logger.info(
+                f"\n[claude] Input tokens: {input_tokens}"
+                f"\n[claude] Output tokens: {output_tokens}"
+            )
+        except Exception as e:
+            logger.warning(f"[claude] Could not retrieve usage metadata. Error: {e}")
+
+        for block in final.content:
+            if getattr(block, "type", None) == "text":
+                return block.text
+        return "Response was blocked."
+
+
 # 7) Registry + factory
-# --------------------------------------------------------------------------------------------------
 
 def get_strategy(name: str, engine: str, REGISTRY: Dict[str, ModelSpec]) -> ModelStrategy:
     try:
@@ -606,9 +751,8 @@ def get_strategy(name: str, engine: str, REGISTRY: Dict[str, ModelSpec]) -> Mode
     strat.load()
     return strat
 
-# --------------------------------------------------------------------------------------------------
-# 8) Assistant façade
-# --------------------------------------------------------------------------------------------------
+
+# 8) Assistant facade
 
 class ModelAssistant:
     MODEL_REGISTRY: Dict[str, ModelSpec] = {
@@ -660,6 +804,48 @@ class ModelAssistant:
             path="gemini-3.1-pro-preview",
             strategy_hf=GeminiStrategy,
             strategy_vllm=GeminiStrategy,
+            supports_image=True,
+        ),
+        "gpt-5": ModelSpec(
+            name="gpt-5",
+            path="gpt-5",
+            strategy_hf=OpenAIStrategy,
+            strategy_vllm=OpenAIStrategy,
+            supports_image=True,
+        ),
+        "gpt-5-mini": ModelSpec(
+            name="gpt-5-mini",
+            path="gpt-5-mini",
+            strategy_hf=OpenAIStrategy,
+            strategy_vllm=OpenAIStrategy,
+            supports_image=True,
+        ),
+        "gpt-4o": ModelSpec(
+            name="gpt-4o",
+            path="gpt-4o",
+            strategy_hf=OpenAIStrategy,
+            strategy_vllm=OpenAIStrategy,
+            supports_image=True,
+        ),
+        "claude-opus-4.5": ModelSpec(
+            name="claude-opus-4.5",
+            path="claude-opus-4-5",
+            strategy_hf=ClaudeStrategy,
+            strategy_vllm=ClaudeStrategy,
+            supports_image=True,
+        ),
+        "claude-sonnet-4.5": ModelSpec(
+            name="claude-sonnet-4.5",
+            path="claude-sonnet-4-5",
+            strategy_hf=ClaudeStrategy,
+            strategy_vllm=ClaudeStrategy,
+            supports_image=True,
+        ),
+        "claude-haiku-4.5": ModelSpec(
+            name="claude-haiku-4.5",
+            path="claude-haiku-4-5",
+            strategy_hf=ClaudeStrategy,
+            strategy_vllm=ClaudeStrategy,
             supports_image=True,
         ),
         "internvl3_5-38b": ModelSpec(
@@ -716,9 +902,9 @@ class ModelAssistant:
     def cleanup(self) -> None:
         self.strategy.cleanup()
 
-# --------------------------------------------------------------------------------------------------
+
 # 9) Prompt-file helper (unchanged)
-# --------------------------------------------------------------------------------------------------
+
 
 @lru_cache(maxsize=1)
 def load_prompts() -> Dict[str, Any]:
@@ -728,9 +914,9 @@ def load_prompts() -> Dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
-# --------------------------------------------------------------------------------------------------
+
 # 10) Tiny demo
-# --------------------------------------------------------------------------------------------------
+
 
 if __name__ == "__main__":  # pragma: no cover
     import argparse
