@@ -54,7 +54,9 @@ def main(cfg: DictConfig) -> None:
         return
 
     pkg_prompts_dir = Path(__file__).parent / "prompts"
-    prompts_path = Path(cfg.paths.prompts_path) if cfg.paths.prompts_path else pkg_prompts_dir / "prompts.yaml"
+    prompts_path = Path(
+        cfg.paths.prompts_path
+    ) if cfg.paths.prompts_path else pkg_prompts_dir / "prompts.yaml"
     reflection_prompts = (
         Path(cfg.paths.reflection_prompts)
         if cfg.paths.reflection_prompts
@@ -77,7 +79,7 @@ def main(cfg: DictConfig) -> None:
     if cfg.test.name == "all":
         print(f"🚀 Running ALL tests: {[c.name for c in test_configs]}")
 
-    verbose_flag = cfg.verbose >= 2
+    verbose_flag = cfg.verbose >= 1
 
     results_summary: dict[str, str] = {}
     try:
