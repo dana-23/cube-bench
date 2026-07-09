@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import random
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from tqdm import tqdm
 
@@ -60,9 +60,12 @@ class SolveMovesTest(BaseTest):
         }
         return PromptFactory.get("prediction", prompt_type=self.prompt_type, **kwargs)
 
-    def run(self, num_samples: int) -> Tuple[List[Tuple[str, int]], List[int]]:
+    def run(
+        self, num_samples: int
+    ) -> Tuple[List[Tuple[str, int]], List[int], List[Optional[str]]]:
         wrong_pairs: List[Tuple[str, int]] = []
         acc_bits: List[int] = []
+        preds: List[Optional[str]] = []
         parsed = 0
 
         for i in tqdm(range(num_samples), desc="Solve move test"):
@@ -73,12 +76,13 @@ class SolveMovesTest(BaseTest):
                 user_prompt=user_prompt,
                 system_prompt=sys_prompt,
                 image=sample["image"],
-                temperature=0.1,
+                temperature=0.0,
             )
 
             pred_letter = self.parse_letter(resp, sample["options"])
             ok = int(pred_letter == sample["correct_letter"])
             acc_bits.append(ok)
+            preds.append(pred_letter)
             if pred_letter:
                 parsed += 1
 
@@ -114,4 +118,4 @@ class SolveMovesTest(BaseTest):
             filename=f"solve_moves_{self.prompt_type}.json",
         )
 
-        return wrong_pairs, acc_bits
+        return wrong_pairs, acc_bits, preds

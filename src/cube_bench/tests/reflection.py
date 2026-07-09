@@ -17,25 +17,39 @@ from cube_bench.tests.solve_moves import SolveMovesTest
 logger = logging.getLogger(__name__)
 
 
-def _load_reflection_bundle(path: Path, reflection_type: str) -> Dict[str, str]:
+ASSERT_MODES = ("always", "when_wrong", "never")
+
+
+def _load_reflection_bundle(
+    path: Path, reflection_type: str, needs_open: bool = False
+) -> Dict[str, str]:
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     if reflection_type not in data:
         raise KeyError(f"'{reflection_type}' not in {list(data.keys())}")
     bundle = data[reflection_type]
-    if not isinstance(bundle, dict) or "system" not in bundle or "user" not in bundle:
-        raise ValueError("Reflection bundle must have {'system','user'}.")
+    # The *_open pair is only read when some item is allowed to go un-asserted.
+    required = {"system", "user"} | ({"system_open", "user_open"} if needs_open else set())
+    if not isinstance(bundle, dict) or not required.issubset(bundle):
+        raise ValueError(f"Reflection bundle must have {sorted(required)}.")
     return bundle
 
 
-def _reanswer_bundle() -> dict:
+def _reanswer_bundle(assert_wrong: bool = True) -> dict:
+    phase = (
+        "You are in a RE-ANSWER phase: use the provided reflection to avoid the prior mistake.\n"
+        "The reflection may be JSON (e.g., keys: diagnosis, keywords, avoid_rules, eval, recommend, prior_answer)\n"
+        "or plain text. If avoid_rules or prior_answer is present, do NOT choose those options.\n"
+        if assert_wrong else
+        "You are in a RE-ANSWER phase: use the provided reflection to answer as accurately as you can.\n"
+        "The reflection may endorse your prior answer or propose a different one; follow whichever it\n"
+        "concludes is correct. Do not change your answer merely because you were asked again.\n"
+    )
     return {
         "system": (
             "You are an expert Rubik's-Cube assistant.\n"
             "Allowed moves: F B L R U D with optional ' and 2 (e.g., R, U', F2). Centers never move.\n"
             "If an image is attached, TREAT THE TEXT STATE AS AUTHORITATIVE.\n"
-            "You are in a RE-ANSWER phase: use the provided reflection to avoid the prior mistake.\n"
-            "The reflection may be JSON (e.g., keys: diagnosis, keywords, avoid_rules, eval, recommend, prior_answer)\n"
-            "or plain text. If avoid_rules or prior_answer is present, do NOT choose those options.\n"
+            + phase +
             "If the reflection rates options (e.g., DEC/NO_CHANGE/INC), prefer DEC > NO_CHANGE > INC.\n"
             "If the reflection is missing or unclear, choose the option most consistent with its advice; "
             "on ties use this order: A > B > C > D.\n"
@@ -92,13 +106,19 @@ class ReflectionTest(BaseTest):
         results_subdir: str = "reflection",
         verbose: bool = False,
         reflect_all: bool = True,
+        reveal_choice: bool = False,
+        assert_incorrect: str = "always",
     ):
         super().__init__(assistant, config, n_moves=1, verbose=verbose)
+        if assert_incorrect not in ASSERT_MODES:
+            raise ValueError(f"assert_incorrect must be one of {ASSERT_MODES}")
         self.reflection_prompts = Path(reflection_prompts)
         self.reflection_type = reflection_type
         self.prompt_type = prompt_type
         self.max_reflections = max_reflections
         self.reflect_all = reflect_all
+        self.reveal_choice = reveal_choice
+        self.assert_incorrect = assert_incorrect
         self.results_root = Path(config.results_dir) / results_subdir
 
     def _make_run_dir(self, model_name: str) -> Path:
@@ -152,7 +172,7 @@ class ReflectionTest(BaseTest):
             n_moves=1,
             verbose=self.verbose,
         )
-        wrong, acc_bits = solver.run(num_samples=num_samples)
+        wrong, acc_bits, preds = solver.run(num_samples=num_samples)
         n_items = len(acc_bits)
         all_indices = list(range(n_items))
 
@@ -170,6 +190,8 @@ class ReflectionTest(BaseTest):
                 "model": model_name,
                 "reflection_type": self.reflection_type,
                 "reflect_all": self.reflect_all,
+                "reveal_choice": self.reveal_choice,
+                "assert_incorrect": self.assert_incorrect,
                 "n_items": n_items,
                 "n_reflected": 0,
                 "initial_accuracy": init_acc,
@@ -194,23 +216,35 @@ class ReflectionTest(BaseTest):
             return summary
 
         # 2) Reflection pass
-        bundle = _load_reflection_bundle(self.reflection_prompts, self.reflection_type)
+        bundle = _load_reflection_bundle(
+            self.reflection_prompts,
+            self.reflection_type,
+            needs_open=self.assert_incorrect != "always",
+        )
         reflections: List[Dict[str, Any]] = []
         ref_tokens = ref_latency = 0
 
         for idx in tqdm(reflect_indices, desc=f"Reflect({self.reflection_type})"):
             sample = solver._build_sample(idx)
-            user = bundle["user"].format(
+
+            assert_wrong = self.assert_incorrect == "always" or (
+                self.assert_incorrect == "when_wrong" and not acc_bits[idx]
+            )
+            choice = preds[idx] if self.reveal_choice else None
+            sys_key, user_key = ("system", "user") if assert_wrong else ("system_open", "user_open")
+
+            user = bundle[user_key].format(
                 cube_state=sample["text_state"],
                 option_A=sample["options"]["A"],
                 option_B=sample["options"]["B"],
                 option_C=sample["options"]["C"],
                 option_D=sample["options"]["D"],
-                model_choice="[HIDDEN]",
+                model_choice=choice or "[HIDDEN]",
+                choice_line=f"You previously chose option: {choice}. " if choice else "",
                 correct_answer=sample["correct_letter"],
             )
             text, usage, dt_ms = self._ask_with_usage(
-                system_prompt=bundle["system"],
+                system_prompt=bundle[sys_key],
                 user_prompt=user,
                 image=sample["image"],
                 max_new_tokens=2**16,
@@ -220,6 +254,9 @@ class ReflectionTest(BaseTest):
             ref_latency += dt_ms
             reflections.append({
                 "index": idx,
+                "prior_answer": choice,
+                "asserted_incorrect": assert_wrong,
+                "initially_correct": bool(acc_bits[idx]),
                 "reflection_text": text,
                 "latency_ms": dt_ms,
                 "usage": usage,
@@ -228,12 +265,12 @@ class ReflectionTest(BaseTest):
         _save_jsonl(out_dir / "reflections.jsonl", reflections)
 
         # 3) Re-answer pass
-        reask = _reanswer_bundle()
         reanswers: List[Dict[str, Any]] = []
         re_tokens = re_latency = 0
 
         for r in tqdm(reflections, desc="Reanswer"):
             idx = r["index"]
+            reask = _reanswer_bundle(assert_wrong=r["asserted_incorrect"])
             sample = solver._build_sample(idx)
             reply, usage, dt_ms = self._ask_with_usage(
                 system_prompt=reask["system"],
@@ -317,6 +354,8 @@ class ReflectionTest(BaseTest):
             "model": model_name,
             "reflection_type": self.reflection_type,
             "reflect_all": self.reflect_all,
+                "reveal_choice": self.reveal_choice,
+                "assert_incorrect": self.assert_incorrect,
             "n_items": n_items,
             "n_reflected": n_reflected,
             "initial_accuracy": round(init_acc, 4),
