@@ -1,6 +1,25 @@
 name: reflection
 reflection_type: Redacted          # Unguided | Redacted | Unredacted
-prompt_type: image
-max_reflections: null
+prompt_type: image                 # unused by ReflectionTest; draft pass is always "mixed"
+max_reflections: null              # only applies when reflect_all=false (unreachable from here)
 reflection_prompts: null           # null => paths.reflection_prompts
-n_moves: 1
+n_moves: 1                         # unused by ReflectionTest
+
+# Does the reflection prompt show the model the answer it actually gave?
+#   false -> {model_choice} renders as [HIDDEN]
+#   true  -> renders as the letter the draft pass actually produced
+reveal_choice: true
+
+# When does the prompt assert the prior answer was wrong?
+#   always     -> on every item, including ones the model got right
+#   when_wrong -> only on items that were actually wrong (nothing false is ever stated)
+#   never      -> no verdict at all; the model just re-solves. Control arm.
+assert_incorrect: always
+
+# The two arms that reproduce the arXiv v1 reflection results:
+#   always + reveal_choice=false -> the code as copied off the GPU cluster
+#   always + reveal_choice=true  -> what Appendix C.4.2 reads like
+# The wrongness sentence is unconditional in C.4.2, so `always` is correct either way;
+# only reveal_choice is in doubt. On claude-sonnet-4.5 (N=20) `always` and `never`
+# flipped the same number of initially-correct items, so the asserted error does not
+# appear to be what drives OTR.

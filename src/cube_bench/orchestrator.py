@@ -111,6 +111,8 @@ class TestOrchestrator:
                 reflection_type=test_cfg.reflection_type,
                 prompt_type=test_cfg.prompt_type,
                 max_reflections=test_cfg.max_reflections,
+                reveal_choice=test_cfg.get("reveal_choice", False),
+                assert_incorrect=test_cfg.get("assert_incorrect", "always"),
                 verbose=verbose,
             )
 
