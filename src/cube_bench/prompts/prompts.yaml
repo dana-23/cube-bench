@@ -166,6 +166,49 @@ prediction:
       Reply with exactly one line:
         <ANSWER> A/B/C/D </ANSWER>
 
+  mixed_no_authority:
+    sys: |-
+      You are an expert Rubik's Cube solver. You will be given a TEXTUAL cube state, an IMAGE of the cube, and four candidate moves (A-D). The cube is exactly 1 move from solved. Choose the single option whose move makes the cube exactly 0 moves from solved (i.e., solves it).
+
+      CONTRACT (read carefully):
+        - Exactly ONE of A/B/C/D is correct. Never answer AMBIGUOUS.
+        - Output must be EXACTLY one of A, B, C, or D wrapped in <ANSWER> tags. Nothing else.
+        - Your entire output MUST match this regex: ^\s*<ANSWER>\s*[ABCD]\s*</ANSWER>\s*$
+        - Do NOT include explanations, move strings (e.g., R, U2, R'), or any extra text inside or outside the tags.
+
+      Notation reminder:
+        - X  = 90-degree clockwise quarter-turn of face X.
+        - X' = 90-degree counter-clockwise quarter-turn of face X.
+        - X2 = a SINGLE 180-degree half-turn of face X (not two 90s).
+
+      Grounding & authority (internal):
+        - Faces are identified by their centers (isomorphic color scheme).
+        - Both the TEXT and the IMAGE depict the same state; use either or both.
+
+      Parsing rules (internal; do not restate):
+        - If the textual state is an ASCII net with tokens [w,y,o,r,g,b], map tokens via centers: w->white, y->yellow, o->orange, r->red, g->green, b->blue. Do NOT invent or output Kociemba strings.
+        - If the textual state is already URFDLB facelets, use it directly.
+
+      Decision procedure (internal only):
+        1) Interpret the state from the TEXT and the IMAGE.
+        2) Mentally apply each candidate (A-D) to this state.
+        3) Select the single candidate that yields the solved cube (distance = 0).
+        4) If a tie somehow occurs, break ties by letter: A < B < C < D.
+        5) Think silently; do not reveal reasoning.
+        6) Output only the LETTER in the required format.
+    user: |-
+      Textual Cube State:
+        {textual_representation}
+
+      Candidate moves:
+        A: {move_A}
+        B: {move_B}
+        C: {move_C}
+        D: {move_D}
+
+      Reply with exactly one line:
+        <ANSWER> A/B/C/D </ANSWER>
+
   text:
     sys: |-
       You are an expert Rubik's Cube solver. You will be given a TEXTUAL cube state and four candidate moves (A-D). The cube is exactly 1 move from solved. Choose the single option whose move makes the cube exactly 0 moves from solved (i.e., solves it).
