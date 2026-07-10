@@ -41,7 +41,7 @@ class SolveMovesTest(BaseTest):
 
         return {
             "id": idx,
-            "image": cube.to_image() if self.prompt_type in ("image", "mixed") else None,
+            "image": cube.to_image() if self.prompt_type in ("image", "mixed", "mixed_no_authority") else None,
             "text_state": self.state_text(cube),
             "options": options,
             "correct_letter": gold_letter,
@@ -66,6 +66,7 @@ class SolveMovesTest(BaseTest):
         wrong_pairs: List[Tuple[str, int]] = []
         acc_bits: List[int] = []
         preds: List[Optional[str]] = []
+        per_item: List[Dict[str, Any]] = []
         parsed = 0
 
         for i in tqdm(range(num_samples), desc="Solve move test"):
@@ -76,13 +77,24 @@ class SolveMovesTest(BaseTest):
                 user_prompt=user_prompt,
                 system_prompt=sys_prompt,
                 image=sample["image"],
-                temperature=0.0,
+                temperature=0.1,
             )
 
             pred_letter = self.parse_letter(resp, sample["options"])
             ok = int(pred_letter == sample["correct_letter"])
             acc_bits.append(ok)
             preds.append(pred_letter)
+            per_item.append(
+                {
+                    "id": sample["id"],
+                    "pred": pred_letter,
+                    "gold": sample["correct_letter"],
+                    "correct_move": sample["correct_move"],
+                    "options": sample["options"],
+                    "scramble": sample["scramble"],
+                    "ok": ok,
+                }
+            )
             if pred_letter:
                 parsed += 1
 
@@ -109,6 +121,7 @@ class SolveMovesTest(BaseTest):
                 "prompt_type": self.prompt_type,
                 "average_accuracy": avg_acc,
                 "num_samples": num_samples,
+                "per_item": per_item,
                 "meta": {
                     "n_moves": self.n_moves,
                     "generator": "VirtualCube",
