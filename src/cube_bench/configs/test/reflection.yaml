@@ -16,6 +16,22 @@ reveal_choice: true
 #   never      -> no verdict at all; the model just re-solves. Control arm.
 assert_incorrect: always
 
+# Which re-answer prompt is used AFTER the reflection is produced.
+#   legacy  -> arXiv v1: the directive is switched by assert_incorrect. The asserted branch
+#              says "if prior_answer is present, do NOT choose those options"; the un-asserted
+#              branch says "do not change your answer merely because you were asked again".
+#              So `assert_incorrect` moves two factors at once, and OTR is entangled with
+#              instruction-following on an explicit exclusion order.
+#   neutral -> one non-directive re-answer prompt, identical in every arm. Required for any
+#              assert-vs-neutral contrast, and for reading OTR as a property of the model.
+reanswer_mode: legacy
+
+# Reuse a previous run's draft pass instead of re-drafting (the draft is an LLM call at
+# temperature 0.1, so re-running it resamples the initially-correct set = the OTR denominator).
+# Pin sibling arms to one draft to license item-paired McNemar. Accepts a reflection run dir,
+# a draft.json, or a solve_moves_*.json.
+draft_from: null
+
 # The two arms that reproduce the arXiv v1 reflection results:
 #   always + reveal_choice=false -> the code as copied off the GPU cluster
 #   always + reveal_choice=true  -> what Appendix C.4.2 reads like

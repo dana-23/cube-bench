@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 ASSERT_MODES = ("always", "when_wrong", "never")
+REANSWER_MODES = ("legacy", "neutral")
 
 
 def _load_reflection_bundle(
@@ -34,16 +35,36 @@ def _load_reflection_bundle(
     return bundle
 
 
-def _reanswer_bundle(assert_wrong: bool = True) -> dict:
-    phase = (
-        "You are in a RE-ANSWER phase: use the provided reflection to avoid the prior mistake.\n"
-        "The reflection may be JSON (e.g., keys: diagnosis, keywords, avoid_rules, eval, recommend, prior_answer)\n"
-        "or plain text. If avoid_rules or prior_answer is present, do NOT choose those options.\n"
-        if assert_wrong else
-        "You are in a RE-ANSWER phase: use the provided reflection to answer as accurately as you can.\n"
-        "The reflection may endorse your prior answer or propose a different one; follow whichever it\n"
-        "concludes is correct. Do not change your answer merely because you were asked again.\n"
-    )
+# The re-answer directive. `legacy` reproduces the arXiv v1 harness, where the directive is
+# switched by whether the reflection asserted error: the asserted branch orders the model to
+# drop its prior answer, the un-asserted branch discourages changing it. That makes any
+# assert-vs-neutral contrast a two-factor change, and it confounds OTR with instruction-
+# following. `neutral` holds one non-directive prompt fixed across every arm, so
+# `assert_incorrect` becomes the single manipulated factor. Everything below the phase
+# paragraph is byte-identical across modes.
+_LEGACY_PHASE_ASSERTED = (
+    "You are in a RE-ANSWER phase: use the provided reflection to avoid the prior mistake.\n"
+    "The reflection may be JSON (e.g., keys: diagnosis, keywords, avoid_rules, eval, recommend, prior_answer)\n"
+    "or plain text. If avoid_rules or prior_answer is present, do NOT choose those options.\n"
+)
+_LEGACY_PHASE_OPEN = (
+    "You are in a RE-ANSWER phase: use the provided reflection to answer as accurately as you can.\n"
+    "The reflection may endorse your prior answer or propose a different one; follow whichever it\n"
+    "concludes is correct. Do not change your answer merely because you were asked again.\n"
+)
+_NEUTRAL_PHASE = (
+    "You are in a RE-ANSWER phase: using the cube state, the options, and the reflection below,\n"
+    "give your final answer. The reflection may be JSON or plain text.\n"
+)
+
+
+def _reanswer_bundle(assert_wrong: bool = True, mode: str = "legacy") -> dict:
+    if mode not in REANSWER_MODES:
+        raise ValueError(f"reanswer_mode must be one of {REANSWER_MODES}")
+    if mode == "neutral":
+        phase = _NEUTRAL_PHASE
+    else:
+        phase = _LEGACY_PHASE_ASSERTED if assert_wrong else _LEGACY_PHASE_OPEN
     return {
         "system": (
             "You are an expert Rubik's-Cube assistant.\n"
@@ -85,6 +106,57 @@ def _save_jsonl(path: Path, rows: List[Dict[str, Any]]) -> None:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
 
+def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
+    return [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+
+
+def _draft_from_reflection_dir(run_dir: Path) -> List[Dict[str, Any]]:
+    """Recover a draft pass from a completed reflection run.
+
+    Runs made before `per_item` was added to SolveMovesTest.save() have no draft file, but
+    reflections.jsonl carries (index, prior_answer, initially_correct) and reanswers.jsonl
+    carries the gold letter, which is the whole draft.
+    """
+    refl = _read_jsonl(run_dir / "reflections.jsonl")
+    gold = {r["index"]: r.get("gold") for r in _read_jsonl(run_dir / "reanswers.jsonl")}
+    return sorted(
+        (
+            {
+                "id": r["index"],
+                "pred": r.get("prior_answer"),
+                "gold": gold.get(r["index"]),
+                "ok": int(bool(r["initially_correct"])),
+            }
+            for r in refl
+        ),
+        key=lambda x: x["id"],
+    )
+
+
+def _resolve_draft(draft_from: Path) -> Tuple[List[Dict[str, Any]], str]:
+    """Accepts a draft.json, a solve_moves_*.json, or a reflection run directory."""
+    p = Path(draft_from)
+    if p.is_dir():
+        if (p / "draft.json").exists():
+            p = p / "draft.json"
+        elif (p / "reflections.jsonl").exists() and (p / "reanswers.jsonl").exists():
+            return _draft_from_reflection_dir(p), str(p)
+        else:
+            raise FileNotFoundError(
+                f"{p} has no draft.json and no reflections.jsonl/reanswers.jsonl pair."
+            )
+    data = json.loads(p.read_text(encoding="utf-8"))
+    if isinstance(data, list):  # save_results() appends; the last entry is the newest run
+        data = data[-1]
+    per_item = data.get("per_item")
+    if not per_item:
+        raise ValueError(
+            f"{p} has no 'per_item' records (written only since commit 7fb081d). "
+            f"Point --draft_from at the reflection run directory instead."
+        )
+    return sorted(per_item, key=lambda x: x["id"]), str(p)
+
+
 class ReflectionTest(BaseTest):
     """Maximum-fairness reflection/re-answer evaluation.
 
@@ -108,10 +180,14 @@ class ReflectionTest(BaseTest):
         reflect_all: bool = True,
         reveal_choice: bool = False,
         assert_incorrect: str = "always",
+        reanswer_mode: str = "legacy",
+        draft_from: Optional[Path] = None,
     ):
         super().__init__(assistant, config, n_moves=1, verbose=verbose)
         if assert_incorrect not in ASSERT_MODES:
             raise ValueError(f"assert_incorrect must be one of {ASSERT_MODES}")
+        if reanswer_mode not in REANSWER_MODES:
+            raise ValueError(f"reanswer_mode must be one of {REANSWER_MODES}")
         self.reflection_prompts = Path(reflection_prompts)
         self.reflection_type = reflection_type
         self.prompt_type = prompt_type
@@ -119,6 +195,8 @@ class ReflectionTest(BaseTest):
         self.reflect_all = reflect_all
         self.reveal_choice = reveal_choice
         self.assert_incorrect = assert_incorrect
+        self.reanswer_mode = reanswer_mode
+        self.draft_from = Path(draft_from) if draft_from else None
         self.results_root = Path(config.results_dir) / results_subdir
 
     def _make_run_dir(self, model_name: str) -> Path:
@@ -172,7 +250,70 @@ class ReflectionTest(BaseTest):
             n_moves=1,
             verbose=self.verbose,
         )
-        wrong, acc_bits, preds = solver.run(num_samples=num_samples)
+        if self.draft_from:
+            per_item, draft_source = _resolve_draft(self.draft_from)
+            if len(per_item) < num_samples or [r["id"] for r in per_item[:num_samples]] != list(range(num_samples)):
+                raise ValueError(
+                    f"Cached draft {draft_source} does not cover items 0..{num_samples - 1}."
+                )
+            per_item = per_item[:num_samples]
+            # The items are seeded by index, so a cached draft is only reusable if the
+            # regenerated item matches. Guards against an n_moves / generator drift.
+            for r in per_item:
+                gold = solver._build_sample(r["id"])["correct_letter"]
+                if r["gold"] != gold:
+                    raise ValueError(
+                        f"Draft item {r['id']} gold={r['gold']} but regenerates as {gold}; "
+                        f"the cached draft was built from different items."
+                    )
+            # A draft item can lack a predicted letter for two very different reasons.
+            unparsed = [r["id"] for r in per_item if r["pred"] is None]
+            if self.reveal_choice and unparsed:
+                if len(unparsed) == len(per_item):
+                    # Every pred is null => the source ran with reveal_choice=false.
+                    raise ValueError(
+                        f"reveal_choice=true needs the draft's predicted letters, but every item in "
+                        f"{draft_source} has pred=null — that draft came from a reveal_choice=false run."
+                    )
+                # An initially-correct item with no parsed answer would corrupt the OTR
+                # denominator: we would assert it was right yet have no choice to reveal.
+                if corrupt := [r["id"] for r in per_item if r["pred"] is None and r["ok"]]:
+                    raise ValueError(
+                        f"Draft items {corrupt} are marked initially-correct but have no parsed "
+                        f"answer in {draft_source}; the OTR denominator would be corrupt."
+                    )
+                # Otherwise the draft response simply failed to parse. Mirror the uncached path,
+                # which renders these as '[HIDDEN]'. All are initially-wrong, so OTR is unaffected.
+                logger.warning(
+                    "[Reflection] %d/%d draft answers did not parse (ids %s). They render as "
+                    "'[HIDDEN]' in the reveal prompt, exactly as an uncached run would. All are "
+                    "initially-wrong, so the OTR denominator (%d items) is unaffected; they sit in "
+                    "the EFR denominator.",
+                    len(unparsed), len(per_item), unparsed, sum(r["ok"] for r in per_item),
+                )
+            n_draft_unparsed = len(unparsed)
+            acc_bits = [int(r["ok"]) for r in per_item]
+            preds = [r["pred"] for r in per_item]
+            wrong = [(r["pred"], r["id"]) for r in per_item if not r["ok"]]
+            logger.info(
+                "[Reflection] draft pass loaded from %s — %d items, InitAcc=%.3f, no draft calls made.",
+                draft_source, num_samples, sum(acc_bits) / num_samples,
+            )
+        else:
+            wrong, acc_bits, preds = solver.run(num_samples=num_samples)
+            per_item = [
+                {"id": i, "pred": preds[i], "gold": solver._build_sample(i)["correct_letter"], "ok": int(acc_bits[i])}
+                for i in range(len(acc_bits))
+            ]
+            draft_source = "fresh"
+            n_draft_unparsed = sum(1 for p in preds if p is None)
+
+        # Always persist the draft so sibling arms can pin to this exact initially-correct set.
+        (out_dir / "draft.json").write_text(
+            json.dumps({"source": draft_source, "num_samples": num_samples, "per_item": per_item}, indent=2),
+            encoding="utf-8",
+        )
+
         n_items = len(acc_bits)
         all_indices = list(range(n_items))
 
@@ -192,6 +333,9 @@ class ReflectionTest(BaseTest):
                 "reflect_all": self.reflect_all,
                 "reveal_choice": self.reveal_choice,
                 "assert_incorrect": self.assert_incorrect,
+                "reanswer_mode": self.reanswer_mode,
+                "draft_source": draft_source,
+                "n_draft_unparsed": n_draft_unparsed,
                 "n_items": n_items,
                 "n_reflected": 0,
                 "initial_accuracy": init_acc,
@@ -270,7 +414,7 @@ class ReflectionTest(BaseTest):
 
         for r in tqdm(reflections, desc="Reanswer"):
             idx = r["index"]
-            reask = _reanswer_bundle(assert_wrong=r["asserted_incorrect"])
+            reask = _reanswer_bundle(assert_wrong=r["asserted_incorrect"], mode=self.reanswer_mode)
             sample = solver._build_sample(idx)
             reply, usage, dt_ms = self._ask_with_usage(
                 system_prompt=reask["system"],
@@ -354,8 +498,11 @@ class ReflectionTest(BaseTest):
             "model": model_name,
             "reflection_type": self.reflection_type,
             "reflect_all": self.reflect_all,
-                "reveal_choice": self.reveal_choice,
-                "assert_incorrect": self.assert_incorrect,
+            "reveal_choice": self.reveal_choice,
+            "assert_incorrect": self.assert_incorrect,
+            "reanswer_mode": self.reanswer_mode,
+            "draft_source": draft_source,
+            "n_draft_unparsed": n_draft_unparsed,
             "n_items": n_items,
             "n_reflected": n_reflected,
             "initial_accuracy": round(init_acc, 4),
