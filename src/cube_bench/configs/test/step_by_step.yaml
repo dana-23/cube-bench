@@ -4,3 +4,33 @@ idk_enabled: false
 idk_weight: 0.25
 idk_policy: teacher_on_abstain     # teacher_on_abstain | skip_item
 idk_conf_threshold: null
+
+# History-conditioned ablation (reviewer PvFT W3 / gate G7).
+# false = Arm A (Markov, published default): only the current state is shown.
+# true  = Arm B (history): each step is a genuine multi-turn exchange over the
+#         whole trajectory so far (S0, a0, S1, a1, ..., St). API models only.
+history: false
+history_images: true          # false = text-serialized history: prior states as text, current state keeps its image
+history_full_responses: true  # false = collapse prior assistant turns to just "<ANSWER> X </ANSWER>"
+
+# Episode-level concurrency. Episodes are independent (seed=idx); steps within an
+# episode stay serial. >1 is for the remote API models (Claude/Gemini/OpenAI);
+# keep at 1 for local HF/vLLM models. Metrics are identical regardless of value.
+concurrency: 1
+
+# Per-episode checkpointing + resume. Each completed episode is written to a JSONL
+# sidecar immediately, so an interruption never loses completed work; re-running
+# the same config resumes and skips finished episodes. The checkpoint is keyed by
+# model/arm/n_moves/samples. Set checkpoint=false to disable; delete the .jsonl (or
+# set a new checkpoint_dir) to force a clean run.
+checkpoint: true
+checkpoint_dir: null   # null = <launch-dir>/checkpoints/step_by_step/
+
+# Seed/replay: reuse the first `seed_prefix` steps of each episode from a prior
+# run (seed_run JSON, must be the SAME model & depth), then continue this arm's
+# loop. Use to item-pair arms at the pre-history prefix: e.g. run the Markov arm
+# with seed_run=<History run json> and seed_prefix=1 so t=1 is literally identical
+# to the History run and both arms enter t=2 from the same state. Each replayed
+# step's rebuilt state is asserted against the seed's log. null = no seeding.
+seed_run: null
+seed_prefix: 1
