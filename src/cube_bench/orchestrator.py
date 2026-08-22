@@ -69,6 +69,14 @@ class TestOrchestrator:
                 idk_weight=test_cfg.idk_weight,
                 idk_policy=test_cfg.idk_policy,
                 idk_conf_threshold=test_cfg.idk_conf_threshold,
+                history_enabled=test_cfg.get("history", False),
+                history_images=test_cfg.get("history_images", True),
+                history_full_responses=test_cfg.get("history_full_responses", True),
+                concurrency=test_cfg.get("concurrency", 1),
+                checkpoint=test_cfg.get("checkpoint", True),
+                checkpoint_dir=test_cfg.get("checkpoint_dir", None),
+                seed_run=test_cfg.get("seed_run", None),
+                seed_prefix=test_cfg.get("seed_prefix", 1),
             )
 
         elif name == "learning-curve":

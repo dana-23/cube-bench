@@ -35,6 +35,7 @@ htmlcov/
 *.cache
 logs/
 *.log
+checkpoints/
 
 # Project-specific
 src/cube_bench/optimal/graph/**

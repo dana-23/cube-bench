@@ -12,9 +12,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
 import tempfile
+import threading
+import time
 import yaml
 from abc import ABC, abstractmethod
+from collections import deque
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -35,6 +39,94 @@ logging.basicConfig(
     level=os.getenv("LOGLEVEL", "INFO"),
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
 )
+
+# ------------------------------------------------------------------------------
+# Transient-error retry (for the remote API strategies under concurrency)
+# ------------------------------------------------------------------------------
+# Tunable via env; defaults give ~1+5 tries with exponential backoff + jitter.
+_RETRY_MAX = int(os.getenv("CUBE_BENCH_API_MAX_RETRIES", "5"))
+_RETRY_BASE_SEC = float(os.getenv("CUBE_BENCH_API_RETRY_BASE_SEC", "2.0"))
+_RETRY_CAP_SEC = float(os.getenv("CUBE_BENCH_API_RETRY_CAP_SEC", "60.0"))
+
+# HTTP statuses worth retrying (rate-limit / timeout / transient server errors;
+# 529 = Anthropic "overloaded").
+_TRANSIENT_STATUS = {408, 409, 425, 429, 500, 502, 503, 504, 529}
+# Substrings matched against the exception type name / code / message. Covers the
+# Anthropic, OpenAI and google-genai SDKs without importing any of them here.
+_TRANSIENT_TOKENS = (
+    "ratelimit", "overloaded", "timeout", "timedout", "connection",
+    "internalserver", "serviceunavailable", "servererror", "apierror",
+    "deadlineexceeded", "resourceexhausted", "unavailable", "temporarily",
+)
+
+
+def _is_transient(exc: Exception) -> bool:
+    """Heuristic: is this exception a retryable transient API failure?"""
+    codes = []
+    for attr in ("status_code", "code", "http_status", "status"):
+        v = getattr(exc, attr, None)
+        if isinstance(v, bool):
+            continue
+        if isinstance(v, int):
+            codes.append(v)
+        elif isinstance(v, str) and v.strip().isdigit():
+            codes.append(int(v.strip()))
+    if any(c in _TRANSIENT_STATUS for c in codes):
+        return True
+    hay = f"{type(exc).__name__} {getattr(exc, 'code', '')} {exc}".lower()
+    return any(tok in hay for tok in _TRANSIENT_TOKENS)
+
+
+class _RateLimiter:
+    """Thread-safe rolling-window rate limiter: at most ``rpm`` acquisitions per
+    any 60s window, shared across all worker threads. rpm <= 0 disables it."""
+
+    def __init__(self, rpm: int):
+        self.rpm = int(rpm)
+        self._lock = threading.Lock()
+        self._times: deque = deque()
+
+    def acquire(self) -> None:
+        if self.rpm <= 0:
+            return
+        while True:
+            with self._lock:
+                now = time.time()
+                while self._times and now - self._times[0] >= 60.0:
+                    self._times.popleft()
+                if len(self._times) < self.rpm:
+                    self._times.append(now)
+                    return
+                sleep_for = 60.0 - (now - self._times[0])
+            time.sleep(max(0.0, sleep_for) + 0.001)  # sleep OUTSIDE the lock
+
+
+# Client-side request cap (requests/min) to stay under a provider RPM limit.
+# 0 = unlimited (default). Set e.g. CUBE_BENCH_API_RPM=140 for a 150 RPM plan.
+_RPM_LIMIT = int(os.getenv("CUBE_BENCH_API_RPM", "0"))
+_RATE_LIMITER = _RateLimiter(_RPM_LIMIT)
+
+
+def _call_with_retry(fn, label: str):
+    """Call ``fn`` (a no-arg thunk); retry transient failures with exponential
+    backoff + jitter. Non-transient errors and the final failure re-raise.
+    Each attempt (including retries) passes through the global rate limiter."""
+    delay = _RETRY_BASE_SEC
+    for attempt in range(1, _RETRY_MAX + 2):  # 1 initial try + _RETRY_MAX retries
+        try:
+            _RATE_LIMITER.acquire()
+            return fn()
+        except Exception as exc:  # noqa: BLE001 — classify then re-raise if not transient
+            if attempt > _RETRY_MAX or not _is_transient(exc):
+                raise
+            sleep_s = min(_RETRY_CAP_SEC, delay) * (0.5 + random.random())  # 0.5x–1.5x jitter
+            logger.warning(
+                "[%s] transient API error (try %d/%d): %s: %s — retrying in %.1fs",
+                label, attempt, _RETRY_MAX + 1, type(exc).__name__, exc, sleep_s,
+            )
+            time.sleep(sleep_s)
+            delay = min(_RETRY_CAP_SEC, delay * 2)
+
 
 # Optional imports (keep file importable without deps)
 try:
@@ -220,7 +312,12 @@ class ModelStrategy(ABC):
         image: Optional[Union[Image.Image, Path]],
         gen_cfg: GenerationConfig,
         reference: str = "",
+        history: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
+        """``history``: ordered prior turns prepended before the final
+        (user_prompt, image) turn. Each turn is
+        ``{"role": "user"|"assistant", "text": str, "image": Optional[PIL|Path]}``
+        (``image`` only on user turns). Only the API strategies support it."""
         pass
 
     #  Helpers
@@ -284,8 +381,14 @@ class HuggingFaceStrategy(ModelStrategy):
         image: Optional[Union[Image.Image, Path]],
         gen_cfg: GenerationConfig,
         reference: str = "",
+        history: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
 
+        if history:
+            raise NotImplementedError(
+                f"[{self.spec.name}] history-conditioned generation is only "
+                "implemented for the API strategies (Claude/Gemini/OpenAI)."
+            )
         assert self.prompt_builder is not None and self.processor is not None
         inputs = self.prompt_builder.build_hf_inputs(
             user_prompt=user_prompt,
@@ -387,7 +490,12 @@ class QwenVLStrategy(HuggingFaceStrategy):
             self.spec.path, dtype="auto", device_map="auto"
         ).eval()
     
-    def generate(self,user_prompt: str,system_prompt: str, image: Optional[Union[Image.Image, Path]],gen_cfg: GenerationConfig,reference: str = "") -> str:
+    def generate(self,user_prompt: str,system_prompt: str, image: Optional[Union[Image.Image, Path]],gen_cfg: GenerationConfig,reference: str = "", history: Optional[List[Dict[str, Any]]] = None) -> str:
+        if history:
+            raise NotImplementedError(
+                f"[{self.spec.name}] history-conditioned generation is only "
+                "implemented for the API strategies (Claude/Gemini/OpenAI)."
+            )
         model = self.model
         processor = AutoProcessor.from_pretrained(self.spec.path)
 
@@ -492,8 +600,14 @@ class VllmStrategy(ModelStrategy):
         image: Optional[Union[Image.Image, Path]],
         gen_cfg: GenerationConfig,
         reference: str = "",
+        history: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
 
+        if history:
+            raise NotImplementedError(
+                f"[{self.spec.name}] history-conditioned generation is only "
+                "implemented for the API strategies (Claude/Gemini/OpenAI)."
+            )
         assert self.prompt_builder is not None, "vLLM prompt builder missing"
 
         print(f"Temp={gen_cfg.temperature}")
@@ -530,15 +644,36 @@ class GeminiStrategy(ModelStrategy):
         image: Optional[Union[Image.Image, Path]],
         gen_cfg: GenerationConfig,
         reference: str = "",
+        history: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         from google import genai
         from google.genai import types
 
         client = genai.Client()  # picks up GEMINI_API_KEY from env
 
-        contents: List[Any] = [user_prompt]
-        if image is not None:
-            contents.append(_as_pil(image))
+        if history:
+            from io import BytesIO
+
+            def _turn_parts(text: str, img: Any) -> List[Any]:
+                parts = [types.Part.from_text(text=text)]
+                if img is not None:
+                    buf = BytesIO()
+                    _as_pil(img).save(buf, format="PNG")
+                    parts.append(types.Part.from_bytes(data=buf.getvalue(), mime_type="image/png"))
+                return parts
+
+            contents: List[Any] = [
+                types.Content(
+                    role="model" if turn["role"] == "assistant" else "user",
+                    parts=_turn_parts(turn.get("text", ""), turn.get("image")),
+                )
+                for turn in history
+            ]
+            contents.append(types.Content(role="user", parts=_turn_parts(user_prompt, image)))
+        else:
+            contents = [user_prompt]
+            if image is not None:
+                contents.append(_as_pil(image))
 
         config = types.GenerateContentConfig(
             system_instruction=system_prompt,
@@ -547,11 +682,9 @@ class GeminiStrategy(ModelStrategy):
             top_p=gen_cfg.top_p,
         )
 
-        input_token_estimate = client.models.count_tokens(
-            model=self.spec.path, contents=contents
-        ).total_tokens
-        logger.info(f"[gemini] Estimated input tokens: {input_token_estimate}")
-
+        # NB: no pre-call count_tokens() — that was a second API request per step
+        # (doubling usage against RPM limits). The real input token count is read
+        # from the response's usage_metadata below.
         resp = client.models.generate_content(
             model=self.spec.path,
             contents=contents,
@@ -568,6 +701,7 @@ class GeminiStrategy(ModelStrategy):
             # total - (input + output) captures thinking tokens for reasoning models
             thinking_tokens = total_tokens - (input_tokens + output_tokens)
             logger.info(
+                f"\n[gemini] Input tokens: {input_tokens}"
                 f"\n[gemini] Estimated thinking tokens: {thinking_tokens}"
                 f"\n[gemini] Estimated output tokens: {output_tokens}"
             )
@@ -601,6 +735,7 @@ class OpenAIStrategy(ModelStrategy):
         image: Optional[Union[Image.Image, Path]],
         gen_cfg: GenerationConfig,
         reference: str = "",
+        history: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         from openai import OpenAI
 
@@ -613,10 +748,19 @@ class OpenAIStrategy(ModelStrategy):
                 "image_url": {"url": self._image_to_data_url(image)},
             })
 
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content},
-        ]
+        messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
+        for turn in history or []:
+            if turn["role"] == "assistant":
+                messages.append({"role": "assistant", "content": turn.get("text", "")})
+            else:
+                content: List[Dict[str, Any]] = [{"type": "text", "text": turn.get("text", "")}]
+                if turn.get("image") is not None:
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {"url": self._image_to_data_url(turn["image"])},
+                    })
+                messages.append({"role": "user", "content": content})
+        messages.append({"role": "user", "content": user_content})
 
         resp = client.chat.completions.create(
             model=self.spec.path,
@@ -675,22 +819,35 @@ class ClaudeStrategy(ModelStrategy):
         image: Optional[Union[Image.Image, Path]],
         gen_cfg: GenerationConfig,
         reference: str = "",
+        history: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         import anthropic
 
         client = anthropic.Anthropic()
 
-        user_content: List[Dict[str, Any]] = []
-        if image is not None:
-            user_content.append({
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/png",
-                    "data": self._image_to_b64(image),
-                },
-            })
-        user_content.append({"type": "text", "text": user_prompt})
+        def _user_content(text: str, img: Any) -> List[Dict[str, Any]]:
+            content: List[Dict[str, Any]] = []
+            if img is not None:
+                content.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": self._image_to_b64(img),
+                    },
+                })
+            content.append({"type": "text", "text": text})
+            return content
+
+        messages: List[Dict[str, Any]] = []
+        for turn in history or []:
+            if turn["role"] == "assistant":
+                messages.append({"role": "assistant",
+                                 "content": [{"type": "text", "text": turn.get("text", "")}]})
+            else:
+                messages.append({"role": "user",
+                                 "content": _user_content(turn.get("text", ""), turn.get("image"))})
+        messages.append({"role": "user", "content": _user_content(user_prompt, image)})
 
         # Anthropic rejects passing both temperature and top_p; send one.
         sampling_kwargs: Dict[str, Any] = {"temperature": gen_cfg.temperature}
@@ -705,7 +862,7 @@ class ClaudeStrategy(ModelStrategy):
         with client.messages.stream(
             model=self.spec.path,
             system=system_prompt,
-            messages=[{"role": "user", "content": user_content}],
+            messages=messages,
             max_tokens=max_tokens,
             # thinking={"type": "enabled", "budget_tokens": 10000},
             **sampling_kwargs,
@@ -887,6 +1044,7 @@ class ModelAssistant:
         temperature: float = 0.0,
         top_p: float = 1.0,
         do_sample: bool = False,
+        history: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
 
         gen_cfg = GenerationConfig(
@@ -895,8 +1053,14 @@ class ModelAssistant:
             top_p=top_p,
             do_sample=do_sample,
         )
-        return self.strategy.generate(
-            user_prompt, system_prompt, image, gen_cfg, reference
+        # Retry transient API failures (rate limits, timeouts, 5xx) so a single
+        # hiccup doesn't kill a long concurrent run. Non-transient errors (bad
+        # request, auth, local-model failures) re-raise immediately.
+        return _call_with_retry(
+            lambda: self.strategy.generate(
+                user_prompt, system_prompt, image, gen_cfg, reference, history=history
+            ),
+            label=self.get_name(),
         )
 
     def cleanup(self) -> None:
