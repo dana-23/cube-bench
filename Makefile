@@ -4,7 +4,7 @@
 PYTHON ?= python
 PIP    ?= $(PYTHON) -m pip
 
-.PHONY: help install build setup check
+.PHONY: help install build setup check lint
 
 help:
 	@echo "Cube Bench targets:"
@@ -12,6 +12,7 @@ help:
 	@echo "  make build    - Precompute IDA* / optimal-distance graphs (~8h)"
 	@echo "  make setup    - install + build"
 	@echo "  make check    - Verify the package imports"
+	@echo "  make lint     - Run Pylint recursively over the repository"
 
 install:
 	$(PIP) install -r requirements.txt
@@ -24,3 +25,6 @@ setup: install build
 
 check:
 	$(PYTHON) -c "import cube_bench as cb; print('cube_bench version:', getattr(cb, '__version__', 'unknown'))"
+
+lint:
+	$(PYTHON) -m pylint --recursive=y .
