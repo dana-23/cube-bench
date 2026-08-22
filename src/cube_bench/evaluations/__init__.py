@@ -1,7 +1,7 @@
 # ==============================
-# file: cube_bench/tests/__init__.py
+# file: cube_bench/evaluations/__init__.py
 # ==============================
-# Re-export test classes for orchestrator convenience
+# Re-export evaluation classes for orchestrator convenience
 from .solve_moves import SolveMovesTest
 from .verification import VerificationTest
 from .reconstruction import ReconstructionTest

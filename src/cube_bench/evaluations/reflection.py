@@ -12,7 +12,7 @@ import yaml
 from tqdm import tqdm
 
 from ..core import BaseTest
-from cube_bench.tests.solve_moves import SolveMovesTest
+from cube_bench.evaluations.solve_moves import SolveMovesTest
 
 logger = logging.getLogger(__name__)
 

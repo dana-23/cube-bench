@@ -8,7 +8,7 @@ from typing import Any, Optional
 from omegaconf import DictConfig
 
 from .config import Config
-from .tests import (
+from .evaluations import (
     InvarianceSweepTest,
     LearningCurveTest,
     MoveEffectTest,

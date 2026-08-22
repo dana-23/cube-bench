@@ -25,6 +25,12 @@ readme = "README.md"
 [project.scripts]
 cube-bench = "cube_bench.cli:main"
 
+[project.optional-dependencies]
+dev = [
+  "pylint>=4.0",
+  "pytest>=8.0",
+]
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 include-package-data = true
@@ -36,3 +42,6 @@ include-package-data = true
 where = ["src"]
 include = ["cube_bench*"]
 exclude = ["tests*", "docs*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
