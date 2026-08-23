@@ -3,6 +3,7 @@
 
 PYTHON ?= python
 PIP    ?= $(PYTHON) -m pip
+PYLINT_ARGS ?=
 
 .PHONY: help install install-dev build setup check lint test
 
@@ -33,7 +34,7 @@ check:
 	$(PYTHON) -c "import cube_bench as cb; print('cube_bench version:', getattr(cb, '__version__', 'unknown'))"
 
 lint:
-	$(PYTHON) -m pylint --recursive=y .
+	$(PYTHON) -m pylint --recursive=y $(PYLINT_ARGS) .
 
 test:
 	$(PYTHON) -m pytest
