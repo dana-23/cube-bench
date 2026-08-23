@@ -1,7 +1,5 @@
-# ==============================
-# file: cube_bench/tests/__init__.py
-# ==============================
-# Re-export test classes for orchestrator convenience
+"""The benchmark's evaluation tasks, re-exported for the orchestrator."""
+
 from .solve_moves import SolveMovesTest
 from .verification import VerificationTest
 from .reconstruction import ReconstructionTest

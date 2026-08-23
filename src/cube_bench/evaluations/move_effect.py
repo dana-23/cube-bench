@@ -1,3 +1,5 @@
+"""Move-effect task: label each option DECREASE / NO_CHANGE / INCREASE."""
+
 from __future__ import annotations
 
 import logging
@@ -9,7 +11,7 @@ from typing import Dict, List, Tuple
 
 from tqdm import tqdm
 
-from ..core import BaseTest
+from cube_bench.core import BaseTest
 from cube_bench.sim.cube_simulator import VirtualCube
 
 logger = logging.getLogger(__name__)
@@ -50,7 +52,8 @@ class MoveEffectTest(BaseTest):
         # Depth-wise tracking for adaptive feasible targets
         self.depth_item_count = Counter()             # items per depth d
         self.depth_presented_counts = defaultdict(Counter)  # depth->class->count
-        self.depth_feasible2_counts = defaultdict(lambda: Counter({c: 0 for c in self.CLASSES}))  # depth->class->#items with >=2
+        # depth -> class -> number of items with >= 2 candidates
+        self.depth_feasible2_counts = defaultdict(lambda: Counter({c: 0 for c in self.CLASSES}))
         self.alpha_smooth = 1.0  # Laplace smoothing for feasibility rates
 
     # ---------- labeling neighbors ----------
@@ -187,7 +190,7 @@ class MoveEffectTest(BaseTest):
         cls_freq = Counter(cls for _, cls in picked)
         pending = sorted(picked, key=lambda x: cls_freq[x[1]])  # rare classes first
         for move, cls in pending:
-            slot = min(slots, key=lambda s: self.per_slot_counts[s][cls])
+            slot = min(slots, key=lambda s, cls=cls: self.per_slot_counts[s][cls])
             assignment[slot] = move
             self.per_slot_counts[slot][cls] += 1
             slots.remove(slot)
@@ -195,7 +198,9 @@ class MoveEffectTest(BaseTest):
         return assignment
 
     # ---------- core sampler ----------
-    def _balanced_sample_ABCD(self, d: int, buckets: Dict[str, List[str]]) -> Tuple[Dict[str, str], Dict[str, int], str | None]:
+    def _balanced_sample_ABCD(
+        self, d: int, buckets: Dict[str, List[str]]
+    ) -> Tuple[Dict[str, str], Dict[str, int], str | None]:
         """
         Build A-D so that, when possible, we have one-of-each class plus a feasible double for this item.
         Returns:
@@ -264,7 +269,8 @@ class MoveEffectTest(BaseTest):
             total_here = sum(actual_counts.values()) or 1
             desired_share = target  # guidance only; we're filling remaining slots
             # rank classes by (desired - current_share)
-            def share(cls): return actual_counts[cls] / total_here
+            def share(cls):
+                return actual_counts[cls] / total_here
             order = sorted(self.CLASSES, key=lambda c: desired_share[c] - share(c), reverse=True)
             filled = False
             for cls in order:
@@ -316,12 +322,12 @@ class MoveEffectTest(BaseTest):
     # ---------- prompts ----------
     def _face_centers(self, cube: VirtualCube) -> Dict[str, str]:
         return {
-            "U_color": str(cube._cube.get_face("U")[1][1].colour),
-            "R_color": str(cube._cube.get_face("R")[1][1].colour),
-            "F_color": str(cube._cube.get_face("F")[1][1].colour),
-            "D_color": str(cube._cube.get_face("D")[1][1].colour),
-            "L_color": str(cube._cube.get_face("L")[1][1].colour),
-            "B_color": str(cube._cube.get_face("B")[1][1].colour),
+            "U_color": str(cube.raw.get_face("U")[1][1].colour),
+            "R_color": str(cube.raw.get_face("R")[1][1].colour),
+            "F_color": str(cube.raw.get_face("F")[1][1].colour),
+            "D_color": str(cube.raw.get_face("D")[1][1].colour),
+            "L_color": str(cube.raw.get_face("L")[1][1].colour),
+            "B_color": str(cube.raw.get_face("B")[1][1].colour),
         }
 
     @staticmethod
@@ -361,8 +367,8 @@ class MoveEffectTest(BaseTest):
         per_distance = defaultdict(lambda: {"correct": 0, "total": 0})
 
         logger.info("=" * 80)
-        logger.info(f"Initializing Move-Effect test on {self.assistant.get_name()}")
-        logger.info(f"Number of samples: {num_samples} | Scramble depth: {self.n_moves}")
+        logger.info("Initializing Move-Effect test on %s", self.assistant.get_name())
+        logger.info("Number of samples: %s | Scramble depth: %s", num_samples, self.n_moves)
         logger.info("=" * 80)
 
         for idx in tqdm(range(num_samples), desc=f"Move-Effect (n_moves={self.n_moves})"):
@@ -381,7 +387,7 @@ class MoveEffectTest(BaseTest):
                 if len(buckets.get(c, [])) >= 2:
                     self.depth_feasible2_counts[d][c] += 1
 
-            options, actual_counts_item, doubled_cls = self._balanced_sample_ABCD(d, buckets)
+            options, _actual_counts_item, _doubled_cls = self._balanced_sample_ABCD(d, buckets)
 
             # Coverage bookkeeping
             classes_in_item = {labels_by_move[mv] for mv in options.values()}
@@ -408,8 +414,7 @@ class MoveEffectTest(BaseTest):
                      for m in self.TAG_RE.finditer(response)}
             for k in "ABCD":
                 if k not in preds:
-                    import re as _re
-                    pat = _re.search(rf"{k}\s*:\s*(DECREASE|NO[_ ]?CHANGE|INCREASE)", response, _re.IGNORECASE)
+                    pat = re.search(rf"{k}\s*:\s*(DECREASE|NO[_ ]?CHANGE|INCREASE)", response, re.IGNORECASE)
                     if pat:
                         preds[k] = pat.group(1).replace(" ", "_").upper()
 
@@ -430,11 +435,16 @@ class MoveEffectTest(BaseTest):
 
             if self.verbose:
                 predictions = {k: preds.get(k) for k in 'ABCD'}
-                logger.info(f"[{idx}] d={d}  scramble={scramble}")
-                logger.info(f"bucket sizes: DEC={len(buckets['DECREASE'])}, NC={len(buckets['NO_CHANGE'])}, INC={len(buckets['INCREASE'])}")
-                logger.info(f"options: {options}")
-                logger.info(f"truth:   {truth}")
-                logger.info(f"preds:   {predictions}")
+                logger.info("[%s] d=%s  scramble=%s", idx, d, scramble)
+                logger.info(
+                    "bucket sizes: DEC=%s, NC=%s, INC=%s",
+                    len(buckets['DECREASE']),
+                    len(buckets['NO_CHANGE']),
+                    len(buckets['INCREASE']),
+                )
+                logger.info("options: %s", options)
+                logger.info("truth:   %s", truth)
+                logger.info("preds:   %s", predictions)
 
         # --- diagnostics: priors & expected dot ---
         tot = sum(per_class.values())
@@ -448,7 +458,8 @@ class MoveEffectTest(BaseTest):
         pred_tot = sum(pred_totals[k] for k in tri)
         q = {k: (pred_totals[k] / pred_tot) if pred_tot else 0.0 for k in tri}
 
-        def dot(a, b): return sum(a.get(k, 0.0) * b.get(k, 0.0) for k in tri)
+        def dot(a, b):
+            return sum(a.get(k, 0.0) * b.get(k, 0.0) for k in tri)
         maj_baseline = max(priors.values()) if priors else 0.0
         prior_sample_baseline = dot(priors, priors)
         model_expected = dot(priors, q)
@@ -538,7 +549,8 @@ class MoveEffectTest(BaseTest):
         logger.info("FAIRNESS ─ per-slot JSD(uniform): %s  within±7%%=%s", slot_jsd_uniform, slots_within7_uniform)
         logger.info("FAIRNESS ─ per-slot JSD(target):  %s  within±7%%=%s", slot_jsd_target, slots_within7_target)
         logger.info("FAIRNESS ─ target-double attempts: %s", dict(self.target_double_counts))
-        logger.info("FAIRNESS ─ target-double success:  %s  rates=%s", dict(self.target_double_success), double_success_rate)
+        logger.info("FAIRNESS ─ target-double success:  %s  rates=%s",
+                    dict(self.target_double_success), double_success_rate)
         logger.info("FAIRNESS ─ missing-class counts:   %s", dict(self.missing_class_counts))
         logger.info("FAIRNESS ─ composition histogram (#DEC,#NC,#INC): %s", dict(self.composition_counts))
 

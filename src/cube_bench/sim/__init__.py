@@ -1,3 +1,4 @@
-# cube_bench/sim/__init__.py
+"""Cube simulation and rendering."""
+
 from .cube_simulator import VirtualCube
 __all__ = ["VirtualCube"]

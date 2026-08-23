@@ -1,3 +1,5 @@
+"""Owns the model backend and runs each requested evaluation against it."""
+
 from __future__ import annotations
 
 import gc
@@ -7,8 +9,8 @@ from typing import Any, Optional
 
 from omegaconf import DictConfig
 
-from .config import Config
-from .tests import (
+from cube_bench.config import Config
+from cube_bench.evaluations import (
     InvarianceSweepTest,
     LearningCurveTest,
     MoveEffectTest,
@@ -24,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 
 class TestOrchestrator:
+    """Owns the shared ModelAssistant and dispatches each requested evaluation."""
+
     def __init__(self, model_name: str, config: Config, backend: str = "hf"):
         logger.info("Initializing assistant backend=%s engine=%s", model_name, backend)
         self.assistant = ModelAssistant(model_name, engine=backend)
@@ -36,6 +40,7 @@ class TestOrchestrator:
         verbose: bool = False,
         reflection_prompts_default: Optional[Path] = None,
     ) -> Any:
+        """Construct and run the evaluation named by ``test_cfg.name``."""
         name = test_cfg.name
 
         if name == "prediction":
@@ -132,6 +137,7 @@ class TestOrchestrator:
         return test.run(num_samples)
 
     def cleanup(self):
+        """Release the assistant and free any GPU memory it held."""
         logger.info("Cleaning up assistant resources…")
         if hasattr(self, "assistant") and self.assistant is not None:
             self.assistant.cleanup()

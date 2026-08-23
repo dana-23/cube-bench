@@ -1,3 +1,5 @@
+"""Reconstruction task: read back the 3x3 sticker colours of each face."""
+
 from __future__ import annotations
 
 import logging
@@ -8,7 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from tqdm import tqdm
 
-from ..core import BaseTest
+from cube_bench.core import BaseTest
 from cube_bench.prompts.prompt_factory import PromptFactory
 from cube_bench.sim.cube_simulator import VirtualCube
 
@@ -131,8 +133,10 @@ class ReconstructionTest(BaseTest):
 
         total = max(0, int(num_samples))
         logger.info(
-            f"Starting ReconstructionTest: samples={total}, n_moves={self.n_moves}, "
-            f"model={self.assistant.get_name()}"
+            "Starting ReconstructionTest: samples=%s, n_moves=%s, model=%s",
+            total,
+            self.n_moves,
+            self.assistant.get_name(),
         )
 
         current_max_count = 9 if self.n_moves < 3 else 6
@@ -166,7 +170,9 @@ class ReconstructionTest(BaseTest):
                     attempt += 1
                     if attempt > 50:
                         logger.warning(
-                            f"Could not satisfy max_count={current_max_count} for idx {idx}, accepting best effort."
+                            "Could not satisfy max_count=%s for idx %s, accepting best effort.",
+                            current_max_count,
+                            idx,
                         )
                         valid_scramble = True
                 else:
@@ -189,8 +195,8 @@ class ReconstructionTest(BaseTest):
                     temperature=self.DEFAULT_TEMPERATURE,
                 )
                 if self.verbose:
-                    logger.debug(f"Sample {idx} (attempts={attempt})\ngt={gt}\nscramble={scramble.__str__()}")
-                logger.debug(f"Model Response:\n{resp}")
+                    logger.debug("Sample %s (attempts=%s)\ngt=%s\nscramble=%s", idx, attempt, gt, str(scramble))
+                logger.debug("Model Response:\n%s", resp)
             except Exception as e:
                 logger.exception("assistant.generate failed on sample %d: %s", idx, e)
                 resp = ""
@@ -217,8 +223,8 @@ class ReconstructionTest(BaseTest):
                 freq = count / total_stickers
                 dev = abs(freq - expected_freq)
                 max_dev = max(max_dev, dev)
-                logger.info(f"Color {color}: {count} ({freq:.4f}) | Dev: {dev:.4f}")
-            logger.info(f"Max Deviation: {max_dev:.4f} (Target < 0.05)")
+                logger.info("Color %s: %s (%.4f) | Dev: %.4f", color, count, freq, dev)
+            logger.info("Max Deviation: %.4f (Target < 0.05)", max_dev)
         else:
             max_dev = 0.0
 

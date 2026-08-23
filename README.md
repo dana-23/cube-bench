@@ -48,9 +48,15 @@ You have two options - a one-shot `make` flow or the explicit `pip` commands.
 ```bash
 make setup    # = make install + make build
 make check    # verify the install
+
+# Contributors
+make install-dev  # install lint and test tools
+make test         # run the pytest suite
 ```
 
-Individual targets are also available: `make install`, `make build`, `make check`. Run `make help` to list them.
+Individual targets are also available: `make install`, `make install-dev`,
+`make build`, `make check`, `make test`, and `make lint`. Run `make help` to list
+them.
 
 **Option B: Manual**
 
@@ -59,7 +65,7 @@ Individual targets are also available: `make install`, `make build`, `make check
 pip install -r requirements.txt
 
 # 3b) Install the package in editable dev mode
-pip install -e .
+pip install -e ".[dev]"
 
 # 3c) Precompute IDA* / optimal-distance graphs
 # Warning: computationally intensive, can take ~8 hours depending on your CPU.

@@ -1,9 +1,10 @@
+"""Step-by-step task: closed-loop solving, one move per turn."""
+
 from __future__ import annotations
 
 import hashlib
 import json
 import logging
-import os
 import random
 import threading
 import time
@@ -15,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from tqdm import tqdm
 
-from ..core import BaseTest
+from cube_bench.core import BaseTest
 from cube_bench.prompts.prompt_factory import PromptFactory
 from cube_bench.sim.cube_simulator import VirtualCube
 
@@ -27,10 +28,11 @@ class StepByStepTest(BaseTest):
 
     test_type = "step_by_step"
 
-    def __init__(
+    def __init__(  # pylint: disable=unused-argument  # idk_conf_threshold is pinned below
         self,
         assistant,
         config,
+        *,
         n_moves: int,
         verbose: bool = False,
         idk_enabled: bool = False,
@@ -56,7 +58,9 @@ class StepByStepTest(BaseTest):
         self.idk_enabled = bool(idk_enabled)
         self.idk_weight = float(idk_weight)
         self.idk_policy = str(idk_policy)
-        self.idk_conf_threshold = 50  # kept from prior behavior
+        # NOTE: the `idk_conf_threshold` argument is deliberately ignored — this
+        # threshold stays pinned at 50 to keep results comparable with earlier runs.
+        self.idk_conf_threshold = 50
         self.per_step_idk: List[int] = [0] * n_moves
 
         # Arm B (history-conditioned): at step t the model sees the whole episode
@@ -100,7 +104,7 @@ class StepByStepTest(BaseTest):
             )
 
         if self.idk_enabled:
-            logger.info(f"IDK Enabled -- Policy: {self.idk_policy} -- Weight: {self.idk_weight}")
+            logger.info("IDK Enabled -- Policy: %s -- Weight: %s", self.idk_policy, self.idk_weight)
         logger.info(
             "Arm: %s%s",
             "history" if self.history_enabled else "markov",
@@ -115,7 +119,7 @@ class StepByStepTest(BaseTest):
         pred = self.parse_letter(text)
         if pred is None:
             logger.warning("Could not parse model's output")
-            logger.info(f"Model's full response:\n\n{text}")
+            logger.info("Model's full response:\n\n%s", text)
             return False, None
         return (pred == gold_letter), pred
 
@@ -137,7 +141,8 @@ class StepByStepTest(BaseTest):
             "- You will receive a textual cube state (ground truth) and an image (reference only). "
             "Use the TEXT ONLY to decide.\n\n"
             "Decision rule (deterministic)\n"
-            "1) For each candidate, internally simulate that move on the textual state and estimate the resulting distance d1 (HTM).\n"
+            "1) For each candidate, internally simulate that move on the textual state "
+            "and estimate the resulting distance d1 (HTM).\n"
             "2) If any candidate solves the cube (d1=0), choose that candidate.\n"
             "3) Otherwise choose the candidate with the lowest d1.\n"
             "4) If there is a tie on d1, break ties by letter: A ≺ B ≺ C ≺ D.\n"
@@ -179,8 +184,8 @@ class StepByStepTest(BaseTest):
         teacher_help = 0
 
         if self.verbose:
-            logger.info(f"[sample {idx}] Scramble: {scramble}")
-            logger.info(f"[sample {idx}] Teacher path: {solution_path}")
+            logger.info("[sample %s] Scramble: %s", idx, scramble)
+            logger.info("[sample %s] Teacher path: %s", idx, solution_path)
 
         sample_log = {
             "sample_id": idx,
@@ -297,7 +302,7 @@ class StepByStepTest(BaseTest):
                 })
                 first_error_step = step_i + 1
                 if self.verbose:
-                    logger.info(f"[sample {idx}] Parse failure at step {step_i + 1}; ending episode.")
+                    logger.info("[sample %s] Parse failure at step %s; ending episode.", idx, step_i + 1)
                 break
 
             if self.idk_enabled and pred_letter == "IDK":
@@ -321,12 +326,11 @@ class StepByStepTest(BaseTest):
                     cube.apply(teacher_move)
                     teacher_help += 1
                     continue
-                else:
-                    first_error_step = step_i + 1
-                    break
+                first_error_step = step_i + 1
+                break
 
             if self.verbose:
-                logger.info(f"Model's chosen option: {pred_letter} -> {options_move}")
+                logger.info("Model's chosen option: %s -> %s", pred_letter, options_move)
 
             per_step_correct[step_i] += int(is_correct)
 
@@ -352,7 +356,7 @@ class StepByStepTest(BaseTest):
 
             good_moves = self.optimal_first_moves(cube)
             if self.verbose:
-                logger.info(f"[Sample: {idx} Step: {step_i}] Oracle-good moves: {sorted(good_moves)}")
+                logger.info("[Sample: %s Step: %s] Oracle-good moves: %s", idx, step_i, sorted(good_moves))
 
             made_progress = False
             if options_move is not None:
@@ -368,7 +372,7 @@ class StepByStepTest(BaseTest):
                 else:
                     first_error_step = step_i + 1
                     if self.verbose:
-                        logger.info(f"[sample {idx}] First error at step {step_i + 1}")
+                        logger.info("[sample %s] First error at step %s", idx, step_i + 1)
                     break
 
             # Validate trajectory reconstruction: after applying a replayed move,
@@ -572,12 +576,12 @@ class StepByStepTest(BaseTest):
                 moves.append(mv)
                 states.append(st)
 
-        logger.info(f"Average Correct Steps (teacher-adherence): {avg_depth:.2f} / {self.n_moves}")
+        logger.info("Average Correct Steps (teacher-adherence): %.2f / %s", avg_depth, self.n_moves)
         logger.info(f"Perfect Solves: {perfect}/{len(solve_depths)} "
                     f"({(perfect/len(solve_depths))*100:.2f}%)" if solve_depths else "Perfect Solves: 0/0")
         logger.info("Per-step accuracy: %s | Per-step Ns: %s",
                     [round(x, 3) for x in step_acc], [int(t) for t in self.per_step_totals])
-        logger.info(f"Avg latency: {avg_latency*1000:.1f} ms")
+        logger.info("Avg latency: %.1f ms", avg_latency*1000)
         logger.info(
             "Selective metrics — coverage=%.3f, selective_acc=%.3f, IDK=%d, APA(%.2f)=%.3f",
             coverage_overall, selective_acc, n_idk, self.idk_weight, apa,

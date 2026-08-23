@@ -1,7 +1,5 @@
-from __future__ import annotations
+"""A lean, test-friendly utility for simulating and visualising a 3x3 Rubik's Cube.
 
-"""virtual_cube.py
-A lean, test-friendly utility for simulating and visualising a 3x3 Rubik's Cube.
 The public surface is intentionally small:
 
     >>> cube = VirtualCube()
@@ -11,23 +9,25 @@ The public surface is intentionally small:
 Everything else is considered an implementation detail and may change.
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Optional, Union
-from pathlib import Path
-import kociemba
-from functools import lru_cache
-from kociemba.pykociemba.facecube import FaceCube
-import re
-import copy
+from __future__ import annotations
 
-import torch
-import numpy as np
-import matplotlib.pyplot as plt
-import pycuber as pc  # type: ignore – external dependency
-from pycuber.solver import CFOPSolver
-from PIL import Image, ImageDraw, ImageEnhance
-import io, base64
+import base64
+import io
 import random
+import re
+from dataclasses import dataclass, field
+from functools import lru_cache
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Union
+
+import kociemba
+import matplotlib.pyplot as plt
+import numpy as np
+import pycuber as pc  # type: ignore – external dependency
+import torch
+from kociemba.pykociemba.facecube import FaceCube
+from PIL import Image, ImageDraw, ImageEnhance
+
 import cube_bench.optimal.solver as sv
 
 # ---------------------------------------------------------------------------
@@ -57,6 +57,9 @@ class NetLayout:
 
     face_px: int  # width/height of one 3×3 face in pixels
     face_gap: int
+    # Derived from face_px/face_gap in __post_init__; excluded from eq/hash so the
+    # frozen dataclass stays hashable (a dict field would make it unhashable).
+    positions: Dict[str, Tuple[int, int]] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
         object.__setattr__(self, "positions", self._compute_positions())
@@ -77,7 +80,7 @@ class NetLayout:
         h = 3 * self.face_px + 2 * self.face_gap
         w = 4 * self.face_px + 3 * self.face_gap
         return h, w
-    
+
 
 # ---------------------------------------------------------------------------
 # Core class
@@ -124,39 +127,45 @@ class VirtualCube:
     # Construction & simple helpers
     # ---------------------------------------------------------------------
 
-    def __init__(self) -> None:
-        self._cube: pc.Cube = pc.Cube()
+    def __init__(self, cube: Optional[pc.Cube] = None) -> None:
+        self._cube: pc.Cube = cube if cube is not None else pc.Cube()
         self._palette = Palette()
-    
+        #: The scramble applied by the most recent :meth:`scramble` call.
+        self.formula: Optional[pc.Formula] = None
+
+    @property
+    def raw(self) -> pc.Cube:
+        """The underlying *pycuber* cube, for callers that need its API directly."""
+        return self._cube
+
     def __str__(self) -> str:
         return self._cube.__str__()
-    
+
     def is_solved(self) -> bool:
         """True if each face is uniform (scheme-agnostic)."""
-        
+
         def center_matching():
             for f in "ULFRBD":
                 face = self._cube.get_face(f)
                 c0 = face[1][1].colour
                 if any(sq.colour != c0 for row in face for sq in row):
                     return False
-            
+
             return True
-        
+
         def lazy_matching():
             """Fallback matching"""
             solved_cube = pc.Cube()
-            return self._cube.__str__() == solved_cube.__str__()
+            return str(self._cube) == str(solved_cube)
 
         return center_matching() or lazy_matching()
-    
+
     def clone(self) -> "VirtualCube":
         """Return an independent copy of this VirtualCube."""
-        new_cube = VirtualCube()
-        new_cube._cube = self._cube.copy()  # pycuber’s safe copy
-        return new_cube
-    
+        return VirtualCube(self._cube.copy())  # pycuber’s safe copy
+
     def get_distance(self) -> int:
+        """Optimal solution length in half-turn metric (0 when solved)."""
         if self.is_solved():
             return 0
 
@@ -168,12 +177,14 @@ class VirtualCube:
         distance = re.search(r"\d+", distance)
 
         return int(distance.group())
-    
+
     def corner_orientations(self) -> list[int]:
+        """Per-corner twist values derived from the current facelets."""
         co, _ = _co_eo_from_facelets(self.to_kociemba())
         return list(co)
 
     def edge_orientations(self) -> list[int]:
+        """Per-edge flip values derived from the current facelets."""
         _, eo = _co_eo_from_facelets(self.to_kociemba())
         return list(eo)
 
@@ -222,8 +233,9 @@ class VirtualCube:
     def apply(self, moves: str) -> None:
         """Apply a move sequence given in standard notation (e.g. "R U R' U'")."""
         self._cube(moves)
-    
+
     def solve(self):
+        """Return an optimal solution in standard notation ("" when solved)."""
         if self.is_solved():
             return ""
 
@@ -235,7 +247,7 @@ class VirtualCube:
             if op.endswith("1"):
                 solution[i] = op[0]
 
-            elif op.endswith("3"): 
+            elif op.endswith("3"):
                 solution[i] = op[0] + "'"
 
         optimal_solution = " ".join(solution[:-1])
@@ -246,12 +258,13 @@ class VirtualCube:
         """Return the current colours of the *Front* face (3x3 list)."""
         face = self._cube.get_face("F")
         return [[sq.colour for sq in row] for row in face]
-    
+
     def reset(self):
         """Resets the cube back to solved state."""
         self._cube: pc.Cube = pc.Cube()
-    
+
     def generate_sample(self, n_moves, idx: int):
+        """Build one MCQ item: the true inverse scramble plus 3 distractors."""
         scramble = self.scramble(random_seed=idx, n_moves=n_moves)
         correct_move_str = str(scramble.reverse())
 
@@ -274,7 +287,7 @@ class VirtualCube:
 
         sample = {
             "id": idx,
-            "scramble_cube": self._cube.__str__(),
+            "scramble_cube": str(self._cube),
             "options": options_dict,
             "correct_option": correct_option,
             "image": self.to_image(),
@@ -285,7 +298,7 @@ class VirtualCube:
         self.reset()
 
         return sample
-    
+
     def to_kociemba(self, net: str | None = None) -> str:
         """
         Export the cube to a 54-character Kociemba facelet string in URFDLB order,
@@ -410,11 +423,12 @@ class VirtualCube:
         temp = temp.copy()
 
         # 4) return ASCII net in the *current* color scheme
-        return temp.__str__()
+        return str(temp)
 
     # ---- PUBLIC RENDER API -------------------------------------------------
-    def render(self, *, cell_size: int = 60, sticker_border: int = 2, face_gap: int = 40, 
-               return_type: str = "pil", file_path: Optional[Union[str, Path]] = None, dpi: int = 100, add_labels: bool = True):
+    def render(self, *, cell_size: int = 60, sticker_border: int = 2, face_gap: int = 40,
+               return_type: str = "pil", file_path: Optional[Union[str, Path]] = None,
+               dpi: int = 100, add_labels: bool = True):
         """
         Render the cube net and return it in a HuggingFace-friendly format.
 
@@ -471,7 +485,7 @@ class VirtualCube:
 
                 # Drop alpha (matplotlib may have composited background already)
                 canvas = rgba[..., :3].copy()   # copy if you plan to close fig soon
-                
+
             if return_type != "figure":
                 plt.close(fig)
         else:
@@ -479,24 +493,24 @@ class VirtualCube:
 
         if return_type == "figure":
             return fig
-        
+
         if return_type == "path":
             if not file_path:
                 raise ValueError("file_path must be provided when return_type='path'.")
             return Path(file_path)
-        
+
         if return_type == "numpy":
             return canvas  # (H,W,3) uint8
-        
+
         if return_type == "pil":
             if Image is None:
                 raise RuntimeError("Pillow not installed; cannot return PIL image.")
             return Image.fromarray(canvas, mode="RGB")
-        
+
         if return_type == "tensor":
             tensor = torch.from_numpy(canvas).permute(2, 0, 1).float() / 255.0
             return tensor  # (3,H,W)
-            
+
         if return_type in {"bytes", "base64"}:
             if Image is None:
                 raise RuntimeError("Pillow not installed; cannot encode image.")
@@ -506,8 +520,7 @@ class VirtualCube:
             data = buf.getvalue()
             if return_type == "bytes":
                 return data
-            else:
-                return base64.b64encode(data).decode("utf-8")
+            return base64.b64encode(data).decode("utf-8")
         raise ValueError(f"Unknown return_type '{return_type}'.")
 
     # Backwards-compatible alias
@@ -517,7 +530,7 @@ class VirtualCube:
         """
         return_type = "path" if file_path else "pil"
         return self.render(file_path=file_path, return_type=return_type, **kwargs)
-    
+
     # ---- IMAGE VARIANTS / AUGMENTATIONS ------------------------------------
     def _augment_image(self, img: Image.Image, variant: str, *, brightness: float = 0.8) -> Image.Image:
         """
@@ -582,8 +595,11 @@ class VirtualCube:
         # 🔧 Reindex internal containers so hashes match new colours
         # Easiest: force a full copy which rebuilds sets/dicts with current hashes
         self._cube = self._cube.copy()
-    
-    def render_variant(self, variant: str, *, cell_size: int = 60, sticker_border: int = 2, face_gap: int = 40, dpi: int = 100, add_labels: bool = True, recolor_map: dict[str, str] | None = None, return_type: str = "pil", file_path: Optional[Union[str, Path]] = None):
+
+    def render_variant(self, variant: str, *, cell_size: int = 60, sticker_border: int = 2,
+                       face_gap: int = 40, dpi: int = 100, add_labels: bool = True,
+                       recolor_map: dict[str, str] | None = None, return_type: str = "pil",
+                       file_path: Optional[Union[str, Path]] = None):
         """
         Render a specific variant of the current cube.
 
@@ -619,11 +635,11 @@ class VirtualCube:
             # Convert to the requested return_type
             if return_type == "pil":
                 return pil_img
-            elif return_type == "numpy":
+            if return_type == "numpy":
                 return np.asarray(pil_img, dtype=np.uint8)
-            elif return_type == "tensor":
+            if return_type == "tensor":
                 return torch.from_numpy(np.asarray(pil_img)).permute(2, 0, 1).float() / 255.0
-            elif return_type in {"bytes", "base64", "path", "figure"}:
+            if return_type in {"bytes", "base64", "path", "figure"}:
                 # reuse the standard pipeline by re-encoding
                 buf = io.BytesIO()
                 pil_img.save(buf, format="PNG")
@@ -744,7 +760,7 @@ class VirtualCube:
                 sticker_border=sticker_border,
             )
         return canvas, layout
-    
+
     def _canvas_to_figure(self, canvas: np.ndarray, layout: NetLayout, *, dpi: int, add_labels: bool):
         canvas_h, canvas_w = canvas.shape[:2]
         fig_w_in, fig_h_in = canvas_w / dpi, canvas_h / dpi
@@ -766,12 +782,13 @@ class VirtualCube:
                     fontsize=12,
                     color="white",
                     fontweight="bold",
-                    bbox=dict(boxstyle="round,pad=0.15", facecolor="black", alpha=0.6, linewidth=0),
+                    bbox={"boxstyle": "round,pad=0.15", "facecolor": "black", "alpha": 0.6, "linewidth": 0},
                 )
         fig.tight_layout(pad=0)
         return fig
 
-    def _paint_face(self, canvas: np.ndarray, face_key: str, *, origin: Tuple[int, int], cell_size: int, sticker_border: int,) -> None:
+    def _paint_face(self, canvas: np.ndarray, face_key: str, *, origin: Tuple[int, int],
+                    cell_size: int, sticker_border: int) -> None:
         """Blit a single 3x3 face onto the *canvas* at *origin*."""
         y0, x0 = origin
         face_px = 3 * cell_size
@@ -781,14 +798,19 @@ class VirtualCube:
         for r in range(3):
             for c in range(3):
                 rgb = self._palette[str(face_grid[r][c].colour)]
-                rs, re = r * cell_size + sticker_border, (r + 1) * cell_size - sticker_border
-                cs, ce = c * cell_size + sticker_border, (c + 1) * cell_size - sticker_border
-                face_img[rs:re, cs:ce] = rgb
+                r_lo, r_hi = r * cell_size + sticker_border, (r + 1) * cell_size - sticker_border
+                c_lo, c_hi = c * cell_size + sticker_border, (c + 1) * cell_size - sticker_border
+                face_img[r_lo:r_hi, c_lo:c_hi] = rgb
 
         canvas[y0 : y0 + face_px, x0 : x0 + face_px] = face_img
 
 
-if __name__ == "__main__":
+def _demo() -> None:
+    """Write a 10-move scramble to cube_scramble.png."""
     cube = VirtualCube()
     cube.scramble(n_moves=10)
     cube.to_image("cube_scramble.png")
+
+
+if __name__ == "__main__":
+    _demo()

@@ -1,3 +1,5 @@
+"""Reflection task: does a model abandon a correct answer when prompted to reflect?"""
+
 from __future__ import annotations
 
 import json
@@ -11,8 +13,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 from tqdm import tqdm
 
-from ..core import BaseTest
-from cube_bench.tests.solve_moves import SolveMovesTest
+from cube_bench.core import BaseTest
+from cube_bench.evaluations.solve_moves import SolveMovesTest
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +173,7 @@ class ReflectionTest(BaseTest):
         self,
         assistant,
         config,
+        *,
         reflection_prompts: Path,
         reflection_type: str = "Unredacted",
         prompt_type: str = "image",
@@ -234,7 +237,7 @@ class ReflectionTest(BaseTest):
 
     def run(self, num_samples: int) -> Dict[str, Any]:
         logger.info("=" * 80)
-        logger.info(f"Running {self.reflection_type} Reflection")
+        logger.info("Running %s Reflection", self.reflection_type)
         logger.info("=" * 80)
 
         model_name = getattr(self.assistant, "model_name", None) or self.assistant.get_name()
