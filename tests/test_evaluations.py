@@ -1,6 +1,6 @@
 """Smoke tests for the evaluation package and its shared parsing helpers."""
 
-import cube_bench.evaluations as evaluations
+from cube_bench import evaluations
 from cube_bench.core import BaseTest as EvaluationBase
 
 
@@ -12,6 +12,7 @@ def test_public_evaluations_extend_base_class():
 
 
 def test_parse_letter_accepts_supported_answer_formats():
+    """Every documented answer format should resolve to its option letter."""
     options = {"A": "R", "B": "U'", "C": "F2", "D": "L"}
 
     assert EvaluationBase.parse_letter("<ANSWER> B </ANSWER>") == "B"
@@ -21,11 +22,13 @@ def test_parse_letter_accepts_supported_answer_formats():
 
 
 def test_parse_letter_rejects_unstructured_text():
+    """Prose with no answer marker should not be parsed as a choice."""
     assert EvaluationBase.parse_letter("I would choose option A") is None
     assert EvaluationBase.parse_letter(None) is None
 
 
 def test_parse_idk_accepts_supported_answer_formats():
+    """Abstention phrasings should all be recognised as IDK."""
     assert EvaluationBase.parse_idk("<ANSWER> IDK </ANSWER>")
     assert EvaluationBase.parse_idk("ANSWER: E")
     assert EvaluationBase.parse_idk("I don't know")
@@ -33,6 +36,7 @@ def test_parse_idk_accepts_supported_answer_formats():
 
 
 def test_inverse_move():
+    """Quarter turns invert; half turns are their own inverse."""
     assert EvaluationBase.inverse_move("R") == "R'"
     assert EvaluationBase.inverse_move("R'") == "R"
     assert EvaluationBase.inverse_move("R2") == "R2"

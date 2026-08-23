@@ -1,3 +1,5 @@
+"""Learning-curve task: repeated attempts from the first closed-loop failure."""
+
 from __future__ import annotations
 
 import logging
@@ -7,13 +9,17 @@ from collections import Counter, deque
 from typing import Deque, List, Optional
 
 import matplotlib
-matplotlib.use("Agg")
+
+matplotlib.use("Agg")  # headless-safe; must precede any pyplot import
+
+# pylint: disable=wrong-import-position
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 
-from ..core import BaseTest
+from cube_bench.core import BaseTest
 from cube_bench.prompts.prompt_factory import PromptFactory
 from cube_bench.sim.cube_simulator import VirtualCube
+# pylint: enable=wrong-import-position
 
 logger = logging.getLogger(__name__)
 
@@ -55,10 +61,10 @@ class LearningCurveTest(BaseTest):
             seq = vc.solve()
             return deque(seq.split()) if seq else deque()
         except Exception as e:
-            logger.warning(f"[replan] VirtualCube.solve() failed: {e!r}")
+            logger.warning("[replan] VirtualCube.solve() failed: %r", e)
             return deque()
 
-    def _ask_step(self, cube: VirtualCube, options, gold_letter):
+    def _ask_step(self, cube: VirtualCube, options):
         state_text = self.state_text(cube)
         d_cur = cube.get_distance()
         kwargs = {
@@ -123,7 +129,7 @@ class LearningCurveTest(BaseTest):
                     break
 
                 options, gold_letter = self.gen_mcq_from_good(good, rng)
-                pred_letter, resp = self._ask_step(cube, options, gold_letter)
+                pred_letter, resp = self._ask_step(cube, options)
                 predicted_move = options.get(pred_letter) if pred_letter else None
 
                 if not predicted_move:
@@ -190,13 +196,16 @@ class LearningCurveTest(BaseTest):
                     break
 
                 options, gold_letter = self.gen_mcq_from_good(good, rng)
-                pred_letter, resp = self._ask_step(cube, options, gold_letter)
+                pred_letter, resp = self._ask_step(cube, options)
                 predicted_move = options.get(pred_letter) if pred_letter else None
 
                 if not predicted_move:
                     attempts += 1
                     logger.warning(
-                        f"[sample {idx}] LC-phase parse failure; pred_letter={pred_letter!r}, resp={resp!r}"
+                        "[sample %s] LC-phase parse failure; pred_letter=%r, resp=%r",
+                        idx,
+                        pred_letter,
+                        resp,
                     )
                     continue
 

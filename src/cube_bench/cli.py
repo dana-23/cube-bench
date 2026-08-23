@@ -1,5 +1,8 @@
+"""Hydra entry point: build the pruning tables or run the selected evaluations."""
+
 from __future__ import annotations
 
+import importlib
 import logging
 from pathlib import Path
 from typing import List
@@ -46,11 +49,12 @@ def _load_test_configs_for_all() -> List[DictConfig]:
 
 @hydra.main(version_base=None, config_path="configs", config_name="config")
 def main(cfg: DictConfig) -> None:
+    """Entry point: build the solver tables, or run the configured evaluations."""
     setup_logging(cfg.verbose, cfg.log_file)
 
     if cfg.build:
-        # Preload optimal solver pruning tables and exit.
-        import cube_bench.optimal.solver  # noqa: F401
+        # Importing the solver builds/loads its pruning tables as a side effect.
+        importlib.import_module("cube_bench.optimal.solver")
         return
 
     pkg_prompts_dir = Path(__file__).parent / "prompts"
@@ -95,7 +99,7 @@ def main(cfg: DictConfig) -> None:
                 )
                 results_summary[tname] = "✅ Completed"
             except Exception as e:
-                logging.exception(f"Test {tname} failed: {e}")
+                logging.exception("Test %s failed: %s", tname, e)
                 results_summary[tname] = "❌ Failed"
 
         print("\n" + "=" * 40)

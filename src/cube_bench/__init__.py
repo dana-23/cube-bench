@@ -1,4 +1,5 @@
-# src/cube_bench/__init__.py
+"""Cube Bench: a benchmark for spatial reasoning on the 3x3 Rubik's Cube."""
+
 from __future__ import annotations
 
 # Keep version single-sourced from pyproject.toml

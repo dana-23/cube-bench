@@ -1,3 +1,5 @@
+"""Invariance sweep: single-step MCQ under visual perturbations and recolouring."""
+
 from __future__ import annotations
 
 import logging
@@ -8,7 +10,7 @@ from typing import Dict, List, Optional
 
 from tqdm import tqdm
 
-from ..core import BaseTest
+from cube_bench.core import BaseTest
 from cube_bench.prompts.prompt_factory import PromptFactory
 from cube_bench.sim.cube_simulator import VirtualCube
 
@@ -26,6 +28,7 @@ class InvarianceSweepTest(BaseTest):
         self,
         assistant,
         config,
+        *,
         n_moves: int = 3,
         verbose: bool = False,
         balance_gold_letters: bool = True,
@@ -68,10 +71,15 @@ class InvarianceSweepTest(BaseTest):
 
         if self.verbose:
             logger.info(
-                f"[InvarianceSweep] model={self.assistant.get_name()} "
-                f"n_moves={self.n_moves} samples={num_samples} variants={variants} "
-                f"recolor_map={self.recolor_map} add_labels={self.add_labels} "
-                f"balance_gold_letters={self.balance_gold_letters}"
+                "[InvarianceSweep] model=%s n_moves=%s samples=%s variants=%s "
+                "recolor_map=%s add_labels=%s balance_gold_letters=%s",
+                self.assistant.get_name(),
+                self.n_moves,
+                num_samples,
+                variants,
+                self.recolor_map,
+                self.add_labels,
+                self.balance_gold_letters,
             )
 
         acc: Dict[str, List[int]] = defaultdict(list)
@@ -90,7 +98,7 @@ class InvarianceSweepTest(BaseTest):
             correct_move = self.teacher_first_move(scramble)
             if not correct_move:
                 if self.verbose:
-                    logger.warning(f"[{idx:04d}] Empty solution after scramble; skipping sample.")
+                    logger.warning("[%04d] Empty solution after scramble; skipping sample.", idx)
                 continue
 
             forced = "ABCD"[idx % 4] if self.balance_gold_letters else None
@@ -113,7 +121,7 @@ class InvarianceSweepTest(BaseTest):
             except Exception as e:
                 sys_prompt, user_prompt = self._fallback_prompts(**kwargs)
                 if self.verbose and idx == 0:
-                    logger.info(f"[Prompts] PromptFactory failed with {e!r}; using fallback prompts.")
+                    logger.info("[Prompts] PromptFactory failed with %r; using fallback prompts.", e)
 
             try:
                 images = cube.render_variants(
@@ -124,7 +132,7 @@ class InvarianceSweepTest(BaseTest):
                     add_labels=self.add_labels,
                 )
             except Exception as e:
-                logger.error(f"[{idx:04d}] Render failed for all variants: {e!r}")
+                logger.error("[%04d] Render failed for all variants: %r", idx, e)
                 for v in variants:
                     errors[v] += 1
                 continue
@@ -142,7 +150,7 @@ class InvarianceSweepTest(BaseTest):
                 except Exception as e:
                     errors[vname] += 1
                     if self.verbose:
-                        logger.warning(f"[{idx:04d} {vname}] Generation failed: {e!r}")
+                        logger.warning("[%04d %s] Generation failed: %r", idx, vname, e)
                     continue
                 latency = time.time() - t0
 
@@ -159,9 +167,15 @@ class InvarianceSweepTest(BaseTest):
 
                 if self.verbose:
                     logger.info(
-                        f"[{idx:04d} {vname}] gold={gold_letter}:{correct_move} "
-                        f"pred={pred_letter} correct={bool(is_correct)} parsed={bool(parsed)} "
-                        f"latency_ms={latency*1000:.1f}"
+                        "[%04d %s] gold=%s:%s pred=%s correct=%s parsed=%s latency_ms=%.1f",
+                        idx,
+                        vname,
+                        gold_letter,
+                        correct_move,
+                        pred_letter,
+                        bool(is_correct),
+                        bool(parsed),
+                        latency*1000,
                     )
 
         # ---------- aggregation ----------
@@ -195,11 +209,15 @@ class InvarianceSweepTest(BaseTest):
             for v in variants:
                 s = summary[v]
                 logger.info(
-                    f"  - {v:7s} n={s['n']} acc={s['accuracy']:.3f} "
-                    f"ΔvsClean={s['delta_vs_clean']:+.3f} "
-                    f"parse_rate={s['parse_rate']:.3f} "
-                    f"latency_ms={s['avg_latency_s']*1000:.1f} "
-                    f"errors={s['errors']} pred_labels={s['pred_label_prior_counts']}"
+                    "  - %7s n=%s acc=%.3f ΔvsClean=%+.3f parse_rate=%.3f latency_ms=%.1f errors=%s pred_labels=%s",
+                    v,
+                    s['n'],
+                    s['accuracy'],
+                    s['delta_vs_clean'],
+                    s['parse_rate'],
+                    s['avg_latency_s']*1000,
+                    s['errors'],
+                    s['pred_label_prior_counts'],
                 )
 
         perturb_params = {

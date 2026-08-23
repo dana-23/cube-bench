@@ -1,11 +1,12 @@
-# =====================
-# file: cube_bench/config.py
-# =====================
+"""Run configuration shared by the CLI, the orchestrator and every evaluation."""
+
 from dataclasses import dataclass
 from pathlib import Path
 
 @dataclass
 class Config:
+    """Filesystem paths and run-wide limits shared by every evaluation."""
+
     dataset_path: Path
     prompts_path: Path
     results_dir: Path

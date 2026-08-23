@@ -45,3 +45,90 @@ exclude = ["tests*", "docs*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# =====================
+# Pylint
+# =====================
+
+[tool.pylint.main]
+# The two-phase solver under optimal/ is vendored from Herbert Kociemba's
+# RubiksCube-TwophaseSolver. It is kept diffable against upstream so it can be
+# re-synced, so its naming and layout are not ours to restyle. Real defects
+# there are still fixed by hand.
+ignore-paths = ['^src/cube_bench/optimal/(?!__init__\.py).*$']
+jobs = 0
+
+[tool.pylint.format]
+max-line-length = 120
+
+[tool.pylint.typecheck]
+# @hydra.main injects the `cfg` argument at call time, so main() is called with
+# no arguments on purpose.
+signature-mutators = ["hydra.main.main"]
+# transformers exposes its model classes through a lazy module __getattr__, which
+# astroid resolves inconsistently: it accepts Gemma3ForConditionalGeneration but
+# not Glm4vMoeForConditionalGeneration, though both exist at runtime.
+ignored-modules = ["transformers"]
+
+[tool.pylint.similarities]
+# The evaluation modules are deliberately parallel: each benchmark task builds
+# the same sample dict and calls the assistant the same way.
+min-similarity-lines = 10
+ignore-imports = true
+ignore-signatures = true
+
+[tool.pylint.basic]
+# Domain shorthand that is clearer than a snake_case rewrite would be:
+#   A/B/C/D - the four multiple-choice option letters
+#   L       - the option-letter alphabet, or a line accumulator in the scripts
+#   N       - a sample count
+#   IC      - the set of initially-correct items in the reflection analysis
+# Plus names fixed by an upstream API (the `X = None` optional-import fallbacks,
+# the InternVL3.5 / ABCD model and task names).
+good-names = [
+  "i", "j", "k", "n", "m", "d", "f", "r", "s", "v", "ex", "Run", "_",
+  "A", "B", "C", "D", "L", "N", "IC",
+  "AutoProcessor", "SamplingParams",
+  "InternVL3_5Strategy", "_balanced_sample_ABCD",
+]
+
+[tool.pylint.classes]
+# The reflection evaluation deliberately reuses SolveMovesTest's item builder;
+# these are friend calls inside one package, not reaching into a stranger.
+exclude-protected = [
+  "_asdict", "_fields", "_replace", "_source", "_make", "os._exit",
+  "_build_sample", "_build_prompts",
+]
+
+[tool.pylint.design]
+# The evaluation harness is a registry of many similar model backends and many
+# similar task classes, so wide constructors are the norm here. The widest ones
+# (StepByStepTest, ReflectionTest) take everything past (assistant, config) as
+# keyword-only, so max-positional-arguments stays tight even though max-args is
+# generous -- a long signature that cannot be filled by position is far safer.
+max-args = 16
+max-positional-arguments = 6
+max-attributes = 20
+max-returns = 13
+min-public-methods = 1
+
+[tool.pylint."messages control"]
+disable = [
+  # Every evaluation loop wraps a model call, whose backends raise anything from
+  # provider SDK errors to CUDA OOM. Catching Exception and recording the sample
+  # as failed is the intended behaviour: one bad sample must not end a long run.
+  "broad-exception-caught",
+  # Heavy and optional dependencies (torch, transformers, vLLM, provider SDKs)
+  # are imported inside the strategy that needs them, so the package stays
+  # importable without them installed.
+  "import-outside-toplevel",
+  # Size metrics, disabled rather than given a fake ceiling: each task's run()
+  # is one long linear script (build item -> prompt -> call -> parse -> score ->
+  # record) that reads better whole than split up to satisfy a counter. Current
+  # worst cases: 85 locals, 140 statements, 32 branches (move_effect,
+  # learning_curve, step_by_step). Re-enable these if those get refactored.
+  "too-many-locals",
+  "too-many-statements",
+  "too-many-branches",
+  "too-many-lines",
+]

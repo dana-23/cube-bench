@@ -1,7 +1,7 @@
 # ################ A simple graphical interface which communicates with the server #####################################
-from optimal.solver import solve
+from cube_bench.optimal.solver import solve
 from tkinter import *
-import optimal.cubie as cubie
+import cube_bench.optimal.cubie as cubie
 
 
 # ################################## Some global variables and constants ###############################################

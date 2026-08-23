@@ -1,37 +1,33 @@
-# =================================================================================================
-#  Modular Model-Strategy Framework
-#  -
-#  - One registry line → new model
-#  - Shared prompt builder & utilities
-#  - HuggingFace (HF) or vLLM engines
-#  - Vision-ready (PIL or Path), efficient, and multi-GPU friendly
-# =================================================================================================
+"""Modular model-strategy framework.
+
+- One registry line -> new model
+- Shared prompt builder & utilities
+- HuggingFace (HF) or vLLM engines
+- Vision-ready (PIL or Path), efficient, and multi-GPU friendly
+"""
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import random
-import tempfile
 import threading
 import time
-import yaml
 from abc import ABC, abstractmethod
 from collections import deque
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Type, Union
-from cube_bench.sim.cube_simulator import VirtualCube
+from typing import Any, Dict, Iterable, List, Optional, Type, Union
 
 import torch
-torch.set_float32_matmul_precision("high")
-
+import yaml
+from dotenv import load_dotenv
 from PIL import Image
 
-from dotenv import load_dotenv
+from cube_bench.sim.cube_simulator import VirtualCube
 
+torch.set_float32_matmul_precision("high")
 load_dotenv()
 
 logger = logging.getLogger("assistant")
@@ -87,6 +83,7 @@ class _RateLimiter:
         self._times: deque = deque()
 
     def acquire(self) -> None:
+        """Block until another request fits inside the trailing 60-second window."""
         if self.rpm <= 0:
             return
         while True:
@@ -126,25 +123,21 @@ def _call_with_retry(fn, label: str):
             )
             time.sleep(sleep_s)
             delay = min(_RETRY_CAP_SEC, delay * 2)
+    raise AssertionError(f"[{label}] retry loop exited without returning or raising")
 
 
 # Optional imports (keep file importable without deps)
 try:
-    from transformers import (
-        AutoProcessor,
-        # AutoTokenizer,
-        AutoModelForCausalLM,  # generic
-        # AutoConfig,
-    )
+    from transformers import AutoProcessor
 except Exception as e:  # pragma: no cover
-    AutoProcessor = AutoTokenizer = AutoModelForCausalLM = AutoConfig = AutoModel = None  # type: ignore
-    logger.info(f"[transformers] Import optional: {e}")
+    AutoProcessor = None  # type: ignore
+    logger.info("[transformers] Import optional: %s", e)
 
 try:
     from vllm import LLM, SamplingParams
 except Exception as e:  # pragma: no cover
     LLM = SamplingParams = None  # type: ignore
-    logger.info(f"[vLLM] Import: {e}")
+    logger.info("[vLLM] Import: %s", e)
 
 # Keep vLLM quiet but preserve our INFO logs
 logging.getLogger("vllm").setLevel(logging.WARNING)
@@ -155,6 +148,8 @@ logging.getLogger("vllm.core").setLevel(logging.WARNING)
 
 @dataclass(frozen=True)
 class ModelSpec:
+    """One registry entry: where a model lives and which strategy runs it."""
+
     name: str
     path: str                 # local path, HF repo, or API name
     strategy_hf: Optional[Type["ModelStrategy"]] = None
@@ -164,6 +159,8 @@ class ModelSpec:
 
 @dataclass
 class GenerationConfig:
+    """Decoding parameters shared by every strategy."""
+
     max_new_tokens: int = 256
     temperature: float = 0.0
     top_p: float = 1.0
@@ -202,6 +199,8 @@ def _to_device(batch: Any, device: torch.device, dtype: Optional[torch.dtype] = 
 # 2) Prompt builder (single source of truth)
 
 class PromptBuilder:
+    """Turns (system, user, image, reference) into the tensors a HF model expects."""
+
     def __init__(self, processor: "AutoProcessor") -> None:
         self.processor = processor
 
@@ -212,6 +211,7 @@ class PromptBuilder:
         image: Optional[Union[Image.Image, Path]] = None,
         reference: str = "",
     ) -> Dict[str, Any]:
+        """Build the tokenized, device-ready inputs for a HuggingFace model."""
         pil = _as_pil(image)
 
         # Compose multimodal-style messages
@@ -265,7 +265,7 @@ class PromptBuilder:
                     raise RuntimeError(
                         "Your self.processor is a tokenizer (no images=). "
                         "Load a multimodal AutoProcessor for the model or attach self.image_processor."
-                    )
+                    ) from e
                 vision_inputs = image_processor(images=images, return_tensors="pt")
                 text_inputs.update(vision_inputs)
 
@@ -274,6 +274,7 @@ class PromptBuilder:
 
     def build_vllm_request(self, user_prompt: str, system_prompt: str,
                        image: Optional[Union[Image.Image, Path]] = None) -> Dict[str, Any]:
+        """Build the prompt dict a vLLM engine expects, with image placeholders."""
         pil = _as_pil(image)
         # Use HF multimodal chat template to insert the placeholder token(s)
         messages = [
@@ -292,6 +293,8 @@ class PromptBuilder:
 # 3) Strategy base class
 
 class ModelStrategy(ABC):
+    """Backend contract: load a model, generate from it, then release it."""
+
     def __init__(self, spec: ModelSpec):
         self.spec = spec
         self.processor: Optional["AutoProcessor"] = None
@@ -302,7 +305,7 @@ class ModelStrategy(ABC):
     #  Lifecycle hooks
     @abstractmethod
     def load(self) -> None:
-        pass
+        """Load the model. No-op for strategies that connect lazily."""
 
     @abstractmethod
     def generate(
@@ -318,7 +321,6 @@ class ModelStrategy(ABC):
         (user_prompt, image) turn. Each turn is
         ``{"role": "user"|"assistant", "text": str, "image": Optional[PIL|Path]}``
         (``image`` only on user turns). Only the API strategies support it."""
-        pass
 
     #  Helpers
     def _ensure_processor(self) -> None:
@@ -326,24 +328,25 @@ class ModelStrategy(ABC):
         # InternVL needs its remote (non-fast) tokenizer with image tokens.
         try:
             self.processor = AutoProcessor.from_pretrained(
-                self.spec.path, 
-                trust_remote_code=True, 
+                self.spec.path,
+                trust_remote_code=True,
                 use_fast=True
             )
 
         except Exception as e:
-            logger.warning(f"Could not load fast tokenizer for {self.spec.name}: {e}")
-            logger.warning(f"Falling back to slow tokenizer.")
-            
+            logger.warning("Could not load fast tokenizer for %s: %s", self.spec.name, e)
+            logger.warning("Falling back to slow tokenizer.")
+
             self.processor = AutoProcessor.from_pretrained(
-                self.spec.path, 
-                trust_remote_code=True, 
+                self.spec.path,
+                trust_remote_code=True,
                 # use_fast=False
             )
 
         self.prompt_builder = PromptBuilder(self.processor)
 
     def cleanup(self) -> None:
+        """Drop references to the model, processor and prompt builder."""
         logger.debug("[%s] cleanup", self.spec.name)
         try:
             del self.model, self.processor, self.prompt_builder
@@ -356,10 +359,12 @@ class ModelStrategy(ABC):
 # 4) HuggingFace base strategy (shared generation & optional batching)
 
 class HuggingFaceStrategy(ModelStrategy):
+    """Runs a model in-process through Transformers."""
+
     def load(self) -> None:
         self._ensure_processor()
         self.model = self._load_model_instance()
-        
+
         # If model is sharded we won't have single .device; inputs go to cuda:0 if available
         if torch.cuda.is_available():
             self._device_for_inputs = "cuda:0"
@@ -396,7 +401,7 @@ class HuggingFaceStrategy(ModelStrategy):
             image=image if self.spec.supports_image else None,
             reference=reference,
         )
-        
+
         # 1) Move to the right device (do NOT cast yet; HF BatchFeature.to() ignores dtype anyway)
         inputs = _to_device(inputs, torch.device(self._device_for_inputs), dtype=None)
 
@@ -428,8 +433,13 @@ class HuggingFaceStrategy(ModelStrategy):
         return text
 
     # simple batch API (strings, same system prompt & no images for now)
-    def generate_batch(self, prompts: Iterable[str], system_prompt: str = "You are a helpful assistant.", gen_cfg: Optional[GenerationConfig] = None,) -> List[str]:
-
+    def generate_batch(
+        self,
+        prompts: Iterable[str],
+        system_prompt: str = "You are a helpful assistant.",
+        gen_cfg: Optional[GenerationConfig] = None,
+    ) -> List[str]:
+        """Generate one completion per prompt, sharing the system prompt (text only)."""
         assert self.prompt_builder is not None and self.processor is not None
         gen_cfg = gen_cfg or GenerationConfig()
         msgs = [
@@ -464,6 +474,8 @@ class HuggingFaceStrategy(ModelStrategy):
 # concrete HF models
 
 class GemmaStrategy(HuggingFaceStrategy):
+    """Gemma-3 loader (``Gemma3ForConditionalGeneration``)."""
+
     def _load_model_instance(self):
         from transformers import Gemma3ForConditionalGeneration  # type: ignore
         return Gemma3ForConditionalGeneration.from_pretrained(
@@ -471,6 +483,8 @@ class GemmaStrategy(HuggingFaceStrategy):
         ).eval()
 
 class LlamaStrategy(HuggingFaceStrategy):
+    """Llama-4 loader (``Llama4ForConditionalGeneration``)."""
+
     def _load_model_instance(self):
         from transformers import Llama4ForConditionalGeneration  # type: ignore
         return Llama4ForConditionalGeneration.from_pretrained(
@@ -478,19 +492,27 @@ class LlamaStrategy(HuggingFaceStrategy):
         ).eval()
 
 class QwenVLStrategy(HuggingFaceStrategy):
+    """Qwen-VL loader; picks the Qwen3-VL MoE class for the thinking variant."""
+
     def _load_model_instance(self):
         from transformers import Qwen2_5_VLForConditionalGeneration, Qwen3VLMoeForConditionalGeneration # type: ignore
         if self.spec.name == "qwen3-vl-thinking":
             return Qwen3VLMoeForConditionalGeneration.from_pretrained(
+                self.spec.path, dtype="auto", device_map="auto"
+            ).eval()
+        return Qwen2_5_VLForConditionalGeneration.from_pretrained(
             self.spec.path, dtype="auto", device_map="auto"
         ).eval()
 
-        else:
-            return Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            self.spec.path, dtype="auto", device_map="auto"
-        ).eval()
-    
-    def generate(self,user_prompt: str,system_prompt: str, image: Optional[Union[Image.Image, Path]],gen_cfg: GenerationConfig,reference: str = "", history: Optional[List[Dict[str, Any]]] = None) -> str:
+    def generate(
+        self,
+        user_prompt: str,
+        system_prompt: str,
+        image: Optional[Union[Image.Image, Path]],
+        gen_cfg: GenerationConfig,
+        reference: str = "",
+        history: Optional[List[Dict[str, Any]]] = None,
+    ) -> str:
         if history:
             raise NotImplementedError(
                 f"[{self.spec.name}] history-conditioned generation is only "
@@ -552,6 +574,7 @@ class InternVL3_5Strategy(HuggingFaceStrategy):
     """
 
     def _load_model_instance(self):
+        from transformers import AutoModelForImageTextToText  # type: ignore
         return AutoModelForImageTextToText.from_pretrained(
             self.spec.path,
             dtype=self.spec.dtype,
@@ -566,8 +589,8 @@ class GLM45VStrategy(HuggingFaceStrategy):
     Uses the official Transformers class Glm4vMoeForConditionalGeneration.
     """
     def _load_model_instance(self):
-        from transformers import Glm4vMoeForConditionalGeneration, AutoModelForConditionalGeneration
-        return AutoModelForConditionalGeneration.from_pretrained(
+        from transformers import Glm4vMoeForConditionalGeneration  # type: ignore
+        return Glm4vMoeForConditionalGeneration.from_pretrained(
             pretrained_model_name_or_path=self.spec.path,
             dtype="auto",   # bf16 recommended
             device_map="auto",
@@ -578,6 +601,8 @@ class GLM45VStrategy(HuggingFaceStrategy):
 # 5) vLLM local strategy
 
 class VllmStrategy(ModelStrategy):
+    """Runs a model through a local vLLM engine, sharded over all visible GPUs."""
+
     def load(self) -> None:
         assert LLM is not None, "vLLM package not installed"
         self._ensure_processor()
@@ -634,6 +659,8 @@ class VllmStrategy(ModelStrategy):
 # 6) Remote Gemini (API) strategy – optional, off GPU
 
 class GeminiStrategy(ModelStrategy):
+    """Calls the Gemini API via ``google-genai``."""
+
     def load(self) -> None:
         logger.info("[gemini] remote strategy initialized - will use API key from env")
 
@@ -701,12 +728,15 @@ class GeminiStrategy(ModelStrategy):
             # total - (input + output) captures thinking tokens for reasoning models
             thinking_tokens = total_tokens - (input_tokens + output_tokens)
             logger.info(
-                f"\n[gemini] Input tokens: {input_tokens}"
-                f"\n[gemini] Estimated thinking tokens: {thinking_tokens}"
-                f"\n[gemini] Estimated output tokens: {output_tokens}"
+                "\n[gemini] Input tokens: %s"
+                "\n[gemini] Estimated thinking tokens: %s"
+                "\n[gemini] Estimated output tokens: %s",
+                input_tokens,
+                thinking_tokens,
+                output_tokens,
             )
         except Exception as e:
-            logger.warning(f"[gemini] Could not retrieve usage metadata from response. Error: {e}")
+            logger.warning("[gemini] Could not retrieve usage metadata from response. Error: %s", e)
 
         return response_text
 
@@ -714,6 +744,8 @@ class GeminiStrategy(ModelStrategy):
 # 6b) Remote OpenAI (API) strategy – optional, off GPU
 
 class OpenAIStrategy(ModelStrategy):
+    """Calls the OpenAI Responses/Chat API."""
+
     def load(self) -> None:
         logger.info("[openai] remote strategy initialized - will use API key from env")
 
@@ -777,12 +809,13 @@ class OpenAIStrategy(ModelStrategy):
             total_tokens = getattr(usage, "total_tokens", 0) or 0
             reasoning_tokens = total_tokens - (prompt_tokens + completion_tokens)
             logger.info(
-                f"\n[openai] Input tokens: {prompt_tokens}"
-                f"\n[openai] Output tokens: {completion_tokens}"
-                f"\n[openai] Reasoning/other tokens: {reasoning_tokens}"
+                "\n[openai] Input tokens: %s\n[openai] Output tokens: %s\n[openai] Reasoning/other tokens: %s",
+                prompt_tokens,
+                completion_tokens,
+                reasoning_tokens,
             )
         except Exception as e:
-            logger.warning(f"[openai] Could not retrieve usage metadata. Error: {e}")
+            logger.warning("[openai] Could not retrieve usage metadata. Error: %s", e)
 
         choice = resp.choices[0] if resp.choices else None
         return choice.message.content if choice and choice.message else "Response was blocked."
@@ -791,6 +824,8 @@ class OpenAIStrategy(ModelStrategy):
 # 6c) Remote Anthropic Claude (API) strategy – optional, off GPU
 
 class ClaudeStrategy(ModelStrategy):
+    """Calls the Anthropic Messages API."""
+
     # Per-model output-token caps from the Anthropic API.
     MAX_OUTPUT_TOKENS: Dict[str, int] = {
         "claude-opus-4-5": 32000,
@@ -873,12 +908,9 @@ class ClaudeStrategy(ModelStrategy):
             usage = final.usage
             input_tokens = getattr(usage, "input_tokens", 0) or 0
             output_tokens = getattr(usage, "output_tokens", 0) or 0
-            logger.info(
-                f"\n[claude] Input tokens: {input_tokens}"
-                f"\n[claude] Output tokens: {output_tokens}"
-            )
+            logger.info("\n[claude] Input tokens: %s\n[claude] Output tokens: %s", input_tokens, output_tokens)
         except Exception as e:
-            logger.warning(f"[claude] Could not retrieve usage metadata. Error: {e}")
+            logger.warning("[claude] Could not retrieve usage metadata. Error: %s", e)
 
         for block in final.content:
             if getattr(block, "type", None) == "text":
@@ -888,11 +920,12 @@ class ClaudeStrategy(ModelStrategy):
 
 # 7) Registry + factory
 
-def get_strategy(name: str, engine: str, REGISTRY: Dict[str, ModelSpec]) -> ModelStrategy:
+def get_strategy(name: str, engine: str, registry: Dict[str, ModelSpec]) -> ModelStrategy:
+    """Resolve a registry *name* plus *engine* to a constructed strategy."""
     try:
-        spec = REGISTRY[name]
+        spec = registry[name]
     except KeyError as exc:
-        raise ValueError(f"Unknown model '{name}'. Choose from {list(REGISTRY)}") from exc
+        raise ValueError(f"Unknown model '{name}'. Choose from {list(registry)}") from exc
 
     if engine == "vllm":
         if spec.strategy_vllm is None:
@@ -912,6 +945,8 @@ def get_strategy(name: str, engine: str, REGISTRY: Dict[str, ModelSpec]) -> Mode
 # 8) Assistant facade
 
 class ModelAssistant:
+    """Public entry point: resolves a backend name to a strategy and generates."""
+
     MODEL_REGISTRY: Dict[str, ModelSpec] = {
         "gemma3": ModelSpec(
             name="gemma3",
@@ -1032,12 +1067,14 @@ class ModelAssistant:
         self.strategy = get_strategy(backend, self.engine, self.MODEL_REGISTRY)
 
     def get_name(self) -> str:
+        """The registry name of the backend in use."""
         return self.MODEL_REGISTRY[self.backend].name
 
     def generate(
         self,
         user_prompt: str,
         system_prompt: str = "You are a helpful assistant.",
+        *,
         max_new_tokens: int = 128,
         image: Optional[Union[Image.Image, Path]] = None,
         reference: str = "",
@@ -1046,7 +1083,11 @@ class ModelAssistant:
         do_sample: bool = False,
         history: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
+        """Generate one completion from the active backend.
 
+        ``history`` prepends prior turns before the final (user_prompt, image) turn
+        and is only supported by the API strategies.
+        """
         gen_cfg = GenerationConfig(
             max_new_tokens=max_new_tokens,
             temperature=temperature,
@@ -1064,6 +1105,7 @@ class ModelAssistant:
         )
 
     def cleanup(self) -> None:
+        """Release the backend's resources."""
         self.strategy.cleanup()
 
 
@@ -1072,6 +1114,7 @@ class ModelAssistant:
 
 @lru_cache(maxsize=1)
 def load_prompts() -> Dict[str, Any]:
+    """Load ./prompts.yaml once and cache it."""
     path = Path("prompts.yaml")
     if not path.exists():
         raise FileNotFoundError("prompts.yaml file not found")
@@ -1082,7 +1125,8 @@ def load_prompts() -> Dict[str, Any]:
 # 10) Tiny demo
 
 
-if __name__ == "__main__":  # pragma: no cover
+def _demo() -> None:  # pragma: no cover
+    """Ask one configured backend to describe a freshly created cube image."""
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default="gemma3", help="Backend model name")
@@ -1090,7 +1134,7 @@ if __name__ == "__main__":  # pragma: no cover
     args = parser.parse_args()
 
     backend = args.model
-    engine  = args.engine
+    engine = args.engine
 
     cube = VirtualCube()
 
@@ -1106,3 +1150,7 @@ if __name__ == "__main__":  # pragma: no cover
         print(out)
     finally:
         assistant.cleanup()
+
+
+if __name__ == "__main__":  # pragma: no cover
+    _demo()

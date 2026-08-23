@@ -1,3 +1,5 @@
+"""Parse the textual cube-net representation used in prompts and responses."""
+
 def format_rubiks_cube(scrambled_cube_str):
     """
     Parses a textual net layout of a 3x3 Rubik's Cube into a structured dictionary
@@ -18,7 +20,10 @@ def format_rubiks_cube(scrambled_cube_str):
     Each line has 36 chars in the middle rows, 9 chars in the top/bottom rows (after stripping whitespace).
     """
     def parse_row(segment):
-        """Extracts the 3 colors from a 9-character substring like '[x][x][x]' and maps single-letter color codes to full names."""
+        """Extract the 3 colors from a 9-char substring like '[x][x][x]'.
+
+        Single-letter color codes are mapped to full names.
+        """
         color_map = {
             'y': 'Yellow', 'g': 'Green',
             'r': 'Red', 'o': 'Orange',
@@ -31,7 +36,7 @@ def format_rubiks_cube(scrambled_cube_str):
     lines = [line for line in scrambled_cube_str.split('\n') if line.strip()]
 
     # Prepare arrays for each face
-    top = []; left = []; front = []; right = []; back = []; bottom = []
+    top, left, front, right, back, bottom = [], [], [], [], [], []
 
     # For the top (lines 0..2): parse the stripped line
     for i in range(3):
@@ -75,9 +80,23 @@ def format_cube_dict_as_string(cube_dict):
 
     return "\n".join(face_strings)
 
-if __name__ == "__main__":
-    # Example usage
-    scrambled_cube = "         [y][y][w]\n         [y][y][w]\n         [w][w][w]\n[g][g][b][o][g][g][r][o][o][g][r][r]\n[o][r][r][b][g][g][r][o][o][g][b][b]\n[o][r][r][b][o][o][g][b][b][r][b][b]\n         [y][y][y]\n         [w][w][w]\n         [y][y][w]\n"
+def _demo() -> None:
+    """Print a formatted view of one hard-coded scrambled cube."""
+    scrambled_cube = (
+        "         [y][y][w]\n"
+        "         [y][y][w]\n"
+        "         [w][w][w]\n"
+        "[g][g][b][o][g][g][r][o][o][g][r][r]\n"
+        "[o][r][r][b][g][g][r][o][o][g][b][b]\n"
+        "[o][r][r][b][o][o][g][b][b][r][b][b]\n"
+        "         [y][y][y]\n"
+        "         [w][w][w]\n"
+        "         [y][y][w]\n"
+    )
     cube_dict, cube_str = format_rubiks_cube(scrambled_cube)
     print(cube_str)
     print(cube_dict)
+
+
+if __name__ == "__main__":
+    _demo()

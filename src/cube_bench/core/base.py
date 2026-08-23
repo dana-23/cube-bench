@@ -1,3 +1,5 @@
+"""BaseTest: prompting, parsing and scoring behaviour common to all evaluations."""
+
 from __future__ import annotations
 
 import logging
@@ -47,7 +49,7 @@ class BaseTest(ABC):
 
     @abstractmethod
     def run(self, num_samples: int):
-        ...
+        """Run the evaluation over *num_samples* generated items."""
 
     # ----- MCQ answer parsing -----
 
@@ -74,10 +76,12 @@ class BaseTest(ABC):
 
     @staticmethod
     def parse_idk(text: Optional[str]) -> bool:
+        """True if *text* is an explicit abstention ("I don't know")."""
         return bool(text and _IDK_RE.search(text))
 
     @staticmethod
     def parse_yes_no(text: Optional[str]) -> Optional[str]:
+        """Return 'Yes' or 'No' parsed from *text*, else None."""
         if not text:
             return None
         m = _YES_NO_RE.search(text)
@@ -190,7 +194,7 @@ class BaseTest(ABC):
             return str(cube)
         except Exception:
             try:
-                return cube._cube.__str__()  # noqa: SLF001
+                return str(cube.raw)
             except Exception:
                 return ""
 
@@ -232,6 +236,7 @@ class BaseTest(ABC):
 
     @staticmethod
     def inverse_move(move: str) -> str:
+        """Return the move that undoes *move* (half turns are their own inverse)."""
         move = move.strip()
         if not move:
             return move
@@ -247,6 +252,7 @@ class BaseTest(ABC):
         self,
         user_prompt: str,
         system_prompt: str,
+        *,
         image=None,
         max_new_tokens: int = 2**16,
         temperature: float = 0.0,

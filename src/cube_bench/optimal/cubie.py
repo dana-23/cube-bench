@@ -200,7 +200,7 @@ class CubieCube:
 
     def symmetries(self):
         """Generate a list of the symmetries and antisymmetries of the cubie cube."""
-        from symmetries import symCube, inv_idx  # not nice here but else we have circular imports
+        from cube_bench.optimal.symmetries import symCube, inv_idx  # not nice here but else we have circular imports
         s = []
         d = CubieCube()
         for j in range(N_SYM):

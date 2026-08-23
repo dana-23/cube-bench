@@ -1,3 +1,5 @@
+"""Prediction task: single-step multiple-choice move selection from a scramble."""
+
 from __future__ import annotations
 
 import logging
@@ -6,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from tqdm import tqdm
 
-from ..core import BaseTest
+from cube_bench.core import BaseTest
 from cube_bench.prompts.prompt_factory import PromptFactory
 from cube_bench.sim.cube_simulator import VirtualCube
 
@@ -98,7 +100,7 @@ class SolveMovesTest(BaseTest):
             if pred_letter:
                 parsed += 1
 
-            logger.info(f"\nModel Predicted: {pred_letter}\nOk : {ok}")
+            logger.info("\nModel Predicted: %s\nOk : %s", pred_letter, ok)
 
             if not ok:
                 wrong_pairs.append((pred_letter, sample["id"]))
@@ -114,7 +116,7 @@ class SolveMovesTest(BaseTest):
 
         avg_acc = (sum(acc_bits) / len(acc_bits)) if acc_bits else 0.0
         logger.info("SolveMoves avg accuracy (%s): %.3f", self.prompt_type, avg_acc)
-        logger.info(f"Parsed rate: {(parsed / num_samples) * 100 if num_samples else 0.0}")
+        logger.info("Parsed rate: %s", (parsed / num_samples) * 100 if num_samples else 0.0)
 
         self.save(
             {

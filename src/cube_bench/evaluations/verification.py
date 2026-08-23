@@ -1,3 +1,5 @@
+"""Verification task: cross-modal Yes/No agreement between image and text state."""
+
 from __future__ import annotations
 
 import logging
@@ -6,7 +8,7 @@ from typing import Dict, List, Tuple
 
 from tqdm import tqdm
 
-from ..core import BaseTest
+from cube_bench.core import BaseTest
 from cube_bench.prompts.prompt_factory import PromptFactory
 from cube_bench.sim.cube_simulator import VirtualCube
 
@@ -45,7 +47,7 @@ class VerificationTest(BaseTest):
         text_cube.scramble(random_seed=idx, n_moves=self.n_moves)
         front_text = self._front_text(text_cube)
 
-        matched = (idx % 2 == 0)
+        matched = idx % 2 == 0
         if matched:
             img_cube = text_cube
             expected = "Yes"
@@ -92,8 +94,8 @@ class VerificationTest(BaseTest):
                 if pred.lower() == "yes":
                     yes_preds += 1
 
-                exp_yes = (sample["expected"].lower() == "yes")
-                pred_yes = (pred.lower() == "yes")
+                exp_yes = sample["expected"].lower() == "yes"
+                pred_yes = pred.lower() == "yes"
 
                 if exp_yes and pred_yes:
                     tp += 1
@@ -105,10 +107,7 @@ class VerificationTest(BaseTest):
                     fp += 1
 
             if self.verbose:
-                logger.info(
-                    f"Sample {sample['index']}, Expected: {sample['expected']}, "
-                    f"Model prediction: {pred}"
-                )
+                logger.info("Sample %s, Expected: %s, Model prediction: %s", sample['index'], sample['expected'], pred)
 
         total = num_samples if num_samples else 1
         avg_acc = (sum(accuracies) / total) if accuracies else 0.0
