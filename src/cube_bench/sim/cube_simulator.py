@@ -8,6 +8,7 @@ import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
+from threading import Lock
 from typing import Dict, List, Optional, Tuple, Union
 
 import kociemba
@@ -19,6 +20,8 @@ from kociemba.pykociemba.facecube import FaceCube
 from PIL import Image, ImageDraw, ImageEnhance
 
 import cube_bench.optimal.solver as sv
+
+_ORACLE_LOCK = Lock()
 
 # Configuration helpers
 @dataclass(frozen=True)
@@ -76,6 +79,12 @@ def _co_eo_from_facelets(facelets: str) -> tuple[tuple[int, ...], tuple[int, ...
     """Convert URFDLB facelets to corner twists and edge flips."""
     cc = FaceCube(facelets).toCubieCube()
     return tuple(int(x) for x in cc.co[:8]), tuple(int(x) for x in cc.eo[:12])
+
+
+def _solve_with_oracle(facelets: str) -> str:
+    with _ORACLE_LOCK:
+        return sv.solve(facelets)
+
 
 class VirtualCube:
     """A lightweight facade around *pycuber*'s `Cube` with rendering helpers."""
@@ -149,7 +158,7 @@ class VirtualCube:
             return 0
 
         s54 = self.to_kociemba()
-        solution = sv.solve(s54)
+        solution = _solve_with_oracle(s54)
         solution = solution.split(" ")
 
         distance = solution[-1]
@@ -225,7 +234,7 @@ class VirtualCube:
             return ""
 
         s54 = self.to_kociemba()
-        solution = sv.solve(s54)
+        solution = _solve_with_oracle(s54)
         solution = solution.split(" ")
 
         for i, op in enumerate(solution):
