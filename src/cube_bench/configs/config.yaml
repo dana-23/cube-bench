@@ -18,9 +18,9 @@ build: false
 
 hydra:
   run:
-    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}-${model}-${test.name}
   sweep:
-    dir: multirun/${now:%Y-%m-%d}/${test.name}
-    subdir: ${hydra.job.num}
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}-sweep
+    subdir: ${hydra.job.num}-${model}-${test.name}
   job:
     chdir: false
