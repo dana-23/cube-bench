@@ -160,8 +160,8 @@ class ReflectionTest(BaseTest):
         config,
         *,
         reflection_prompts: Path,
+        n_moves: int = 1,
         reflection_type: str = "Unredacted",
-        prompt_type: str = "image",
         max_reflections: Optional[int] = None,
         results_subdir: str = "reflection",
         verbose: bool = False,
@@ -171,14 +171,13 @@ class ReflectionTest(BaseTest):
         reanswer_mode: str = "legacy",
         draft_from: Optional[Path] = None,
     ):
-        super().__init__(assistant, config, n_moves=1, verbose=verbose)
+        super().__init__(assistant, config, n_moves=n_moves, verbose=verbose)
         if assert_incorrect not in ASSERT_MODES:
             raise ValueError(f"assert_incorrect must be one of {ASSERT_MODES}")
         if reanswer_mode not in REANSWER_MODES:
             raise ValueError(f"reanswer_mode must be one of {REANSWER_MODES}")
         self.reflection_prompts = Path(reflection_prompts)
         self.reflection_type = reflection_type
-        self.prompt_type = prompt_type
         self.max_reflections = max_reflections
         self.reflect_all = reflect_all
         self.reveal_choice = reveal_choice
@@ -204,7 +203,7 @@ class ReflectionTest(BaseTest):
     ) -> Tuple[str, Dict[str, int], int]:
         """Returns (text, usage_dict, latency_ms) — robust to strategy return shape."""
         t0 = time.perf_counter()
-        out = self.assistant.generate(
+        out = self._generate(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
             image=image,
@@ -233,7 +232,7 @@ class ReflectionTest(BaseTest):
             assistant=self.assistant,
             config=self.config,
             prompt_type="mixed",
-            n_moves=1,
+            n_moves=self.n_moves,
             verbose=self.verbose,
         )
         if self.draft_from:

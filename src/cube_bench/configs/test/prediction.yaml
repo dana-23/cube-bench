@@ -1,3 +1,2 @@
 name: prediction
 prompt_type: image      # mixed | image | text
-n_moves: 1

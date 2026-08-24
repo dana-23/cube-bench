@@ -79,7 +79,7 @@ class StepByStepTest(BaseTest):
         assistant,
         config,
         *,
-        n_moves: int,
+        n_moves: int = 8,
         verbose: bool = False,
         idk_enabled: bool = False,
         idk_weight: float = 0.25,
@@ -118,6 +118,8 @@ class StepByStepTest(BaseTest):
         # Episodes may run concurrently, but their closed-loop steps remain serial.
         # Local HF/vLLM models should use one worker.
         self.concurrency = max(1, int(concurrency))
+        thinking_budget = getattr(config, "thinking_budget", None)
+        self.thinking_budget = None if thinking_budget is None else int(thinking_budget)
 
         # A config-keyed JSONL sidecar makes completed episodes resumable.
         self.checkpoint = bool(checkpoint)
@@ -585,9 +587,10 @@ class StepByStepTest(BaseTest):
             return None
         base = Path(self.checkpoint_dir) if self.checkpoint_dir else Path.cwd() / "checkpoints" / "step_by_step"
         arm = "history" if self.history_enabled else "markov"
+        thinking_tag = f"_tb{self.thinking_budget}" if self.thinking_budget is not None else ""
         # Keep seeded branches separate from plain-run checkpoints.
         seed_tag = f"_seeded-{Path(self.seed_run).stem}-p{self.seed_prefix}" if self._seed_steps else ""
-        key = f"{self.assistant.get_name()}_{arm}_d{self.n_moves}_n{num_samples}{seed_tag}"
+        key = f"{self.assistant.get_name()}_{arm}_d{self.n_moves}_n{num_samples}{thinking_tag}{seed_tag}"
         safe = "".join(c if (c.isalnum() or c in "-._") else "_" for c in key)
         base.mkdir(parents=True, exist_ok=True)
         return base / f"{safe}.jsonl"
@@ -754,6 +757,9 @@ class StepByStepTest(BaseTest):
                 "enabled": self.history_enabled,
                 "images": self.history_images,
                 "full_responses": self.history_full_responses,
+            },
+            "generation_config": {
+                "thinking_budget": self.thinking_budget,
             },
             "seed_config": {
                 "seed_run": self.seed_run,

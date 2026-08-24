@@ -6,6 +6,12 @@ defaults:
 # Registered ModelAssistant name.
 model: claude-sonnet-4.5
 
+# Scramble depth; null keeps each evaluation's existing default.
+n_moves: null
+
+# Thinking-token budget; null keeps provider-default dynamic thinking.
+thinking_budget: null
+
 # hf | vllm
 backend: hf
 

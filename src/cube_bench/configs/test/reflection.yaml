@@ -1,9 +1,6 @@
 name: reflection
 reflection_type: Redacted          # Unguided | Redacted | Unredacted
-prompt_type: image                 # unused by ReflectionTest; draft pass is always "mixed"
 max_reflections: null              # only applies when reflect_all=false (unreachable from here)
-reflection_prompts: null           # null => paths.reflection_prompts
-n_moves: 1                         # unused by ReflectionTest
 
 # Show the draft answer letter; false renders ``{model_choice}`` as ``[HIDDEN]``.
 reveal_choice: true

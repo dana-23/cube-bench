@@ -149,6 +149,7 @@ class GenerationConfig:
     """Decoding parameters shared by every strategy."""
 
     max_new_tokens: int = 256
+    thinking_budget: Optional[int] = None
     temperature: float = 0.0
     top_p: float = 1.0
     do_sample: bool = True
@@ -653,12 +654,17 @@ class GeminiStrategy(ModelStrategy):
             if image is not None:
                 contents.append(_as_pil(image))
 
-        config = types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            max_output_tokens=gen_cfg.max_new_tokens,
-            temperature=gen_cfg.temperature,
-            top_p=gen_cfg.top_p,
-        )
+        config_kwargs = {
+            "system_instruction": system_prompt,
+            "max_output_tokens": gen_cfg.max_new_tokens,
+            "temperature": gen_cfg.temperature,
+            "top_p": gen_cfg.top_p,
+        }
+        if gen_cfg.thinking_budget is not None:
+            config_kwargs["thinking_config"] = types.ThinkingConfig(
+                thinking_budget=gen_cfg.thinking_budget
+            )
+        config = types.GenerateContentConfig(**config_kwargs)
 
         # Read usage from the response; a preflight count would consume another RPM slot.
         resp = client.models.generate_content(
@@ -674,10 +680,12 @@ class GeminiStrategy(ModelStrategy):
             input_tokens = usage.prompt_token_count or 0
             output_tokens = usage.candidates_token_count or 0
             total_tokens = usage.total_token_count or 0
-            thinking_tokens = total_tokens - (input_tokens + output_tokens)
+            thinking_tokens = usage.thoughts_token_count
+            if thinking_tokens is None:
+                thinking_tokens = total_tokens - (input_tokens + output_tokens)
             logger.info(
                 "\n[gemini] Input tokens: %s"
-                "\n[gemini] Estimated thinking tokens: %s"
+                "\n[gemini] Thinking tokens: %s"
                 "\n[gemini] Estimated output tokens: %s",
                 input_tokens,
                 thinking_tokens,
@@ -1006,6 +1014,7 @@ class ModelAssistant:
         system_prompt: str = "You are a helpful assistant.",
         *,
         max_new_tokens: int = 128,
+        thinking_budget: Optional[int] = None,
         image: Optional[Union[Image.Image, Path]] = None,
         reference: str = "",
         temperature: float = 0.0,
@@ -1016,6 +1025,7 @@ class ModelAssistant:
         """Generate a completion, optionally with API-only prior-turn history."""
         gen_cfg = GenerationConfig(
             max_new_tokens=max_new_tokens,
+            thinking_budget=thinking_budget,
             temperature=temperature,
             top_p=top_p,
             do_sample=do_sample,

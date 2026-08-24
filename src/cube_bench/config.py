@@ -12,3 +12,5 @@ class Config:
     results_dir: Path
     max_scramble_len: int = 10
     batch_size: int = 25
+    n_moves: int | None = None
+    thinking_budget: int | None = None

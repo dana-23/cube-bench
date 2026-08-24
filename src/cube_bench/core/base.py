@@ -36,7 +36,7 @@ class BaseTest(ABC):
 
     test_type: str = "base"
 
-    def __init__(self, assistant, config: Config, n_moves: int, verbose: bool = False):
+    def __init__(self, assistant, config: Config, n_moves: int = 3, verbose: bool = False):
         self.assistant = assistant
         self.config = config
         self.n_moves = int(n_moves)
@@ -240,6 +240,15 @@ class BaseTest(ABC):
 
     # ----- Assistant call -----
 
+    def _generate(self, user_prompt: str, system_prompt: str, **kwargs) -> Any:
+        """Call the assistant with run-wide generation settings."""
+        kwargs.setdefault("thinking_budget", getattr(self.config, "thinking_budget", None))
+        return self.assistant.generate(
+            user_prompt=user_prompt,
+            system_prompt=system_prompt,
+            **kwargs,
+        )
+
     def ask(
         self,
         user_prompt: str,
@@ -254,7 +263,7 @@ class BaseTest(ABC):
     ) -> str:
         """Call ``assistant.generate`` and optionally record its latency."""
         t0 = time.time()
-        resp = self.assistant.generate(
+        resp = self._generate(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
             image=image,

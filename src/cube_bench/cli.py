@@ -71,6 +71,8 @@ def main(cfg: DictConfig) -> None:
         dataset_path=Path(cfg.paths.dataset_path),
         prompts_path=prompts_path,
         results_dir=Path(cfg.paths.results_dir),
+        n_moves=cfg.get("n_moves", None),
+        thinking_budget=cfg.get("thinking_budget", None),
     )
 
     from .orchestrator import TestOrchestrator

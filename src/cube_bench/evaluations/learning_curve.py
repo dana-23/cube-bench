@@ -34,7 +34,7 @@ class LearningCurveTest(BaseTest):
         self,
         assistant,
         config,
-        n_moves: int,
+        n_moves: int = 3,
         max_attempts: int = 6,
         accept_progress: bool = True,
         verbose: bool = False,
