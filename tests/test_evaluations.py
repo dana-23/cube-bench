@@ -1,11 +1,15 @@
 """Smoke tests for the evaluation package and its shared parsing helpers."""
 
-from cube_bench import evaluations
+import pytest
+
 from cube_bench.core import BaseTest as EvaluationBase
 
 
 def test_public_evaluations_extend_base_class():
     """Every public evaluation should implement the shared evaluation contract."""
+    # Importing the tasks pulls the runtime stack (tqdm, torch); the parser
+    # tests below need none of it, so only this one is skipped without it.
+    evaluations = pytest.importorskip("cube_bench.evaluations")
     for name in evaluations.__all__:
         evaluation_class = getattr(evaluations, name)
         assert issubclass(evaluation_class, EvaluationBase)
