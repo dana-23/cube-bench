@@ -11,6 +11,7 @@ import time
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -585,7 +586,11 @@ class StepByStepTest(BaseTest):
         """Return the stable, config-keyed checkpoint path outside the run directory."""
         if not self.checkpoint:
             return None
-        base = Path(self.checkpoint_dir) if self.checkpoint_dir else Path.cwd() / "checkpoints" / "step_by_step"
+        base = (
+            Path(self.checkpoint_dir)
+            if self.checkpoint_dir
+            else Path.cwd() / "checkpoints" / "step_by_step" / date.today().isoformat()
+        )
         arm = "history" if self.history_enabled else "markov"
         thinking_tag = f"_tb{self.thinking_budget}" if self.thinking_budget is not None else ""
         # Keep seeded branches separate from plain-run checkpoints.

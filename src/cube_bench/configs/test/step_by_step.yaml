@@ -16,7 +16,7 @@ concurrency: 1
 # Config-keyed JSONL checkpoints resume completed episodes; disable or change the
 # directory for a clean run.
 checkpoint: true
-checkpoint_dir: null   # null = <launch-dir>/checkpoints/step_by_step/
+checkpoint_dir: null   # null = <launch-dir>/checkpoints/step_by_step/<date>/
 
 # Replay a matching model/depth prefix to item-pair arms; rebuilt states are
 # checked against the seed log. Null disables replay.
