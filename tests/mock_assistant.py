@@ -1,23 +1,4 @@
-"""A deterministic stand-in for ModelAssistant, used to drive the evaluations.
-
-``MockAssistant`` simulates a model of a chosen skill level: it answers correctly
-with probability ``accuracy`` and otherwise guesses. That is enough to run any
-evaluation end-to-end without a backend, a GPU, or an API key.
-
-Two things make it usable as a test fixture rather than just a toy:
-
-* **Reply shape is per task.** Each evaluation parses a different answer format
-  (an MCQ letter, Yes/No, per-option distance labels, or a 3x3 colour grid), so
-  the mock picks the format from the prompt unless the caller pins it.
-* **Every decision is a pure function of ``(seed, prompt)``**, not a draw from a
-  shared RNG. Runs are therefore reproducible and unaffected by thread
-  scheduling, which matters because ``StepByStepTest`` calls the assistant from a
-  ``ThreadPoolExecutor``.
-
-Knowing the right answer is the caller's job: pass an ``answer_key`` that maps a
-prompt to its gold value. Without one the mock always guesses, which is still
-enough for smoke-testing the plumbing.
-"""
+"""Deterministic, task-aware ``ModelAssistant`` stand-in for evaluation tests."""
 
 from __future__ import annotations
 
@@ -38,12 +19,7 @@ AnswerKey = Callable[[str, str], Any]
 
 
 def detect_mode(system_prompt: str, user_prompt: str) -> str:
-    """Infer which answer format the prompt is asking for.
-
-    The cues are literals unique to one task's template; ``move_effect`` and
-    ``reconstruction`` are checked first because the step-by-step and
-    learning-curve prompts also mention "decrease" in prose.
-    """
+    """Infer the reply format, checking task-specific cues before generic MCQ prose."""
     text = f"{system_prompt}\n{user_prompt}".lower()
     if "decrease|no_change|increase" in text:
         return MODE_MOVE_EFFECT
@@ -55,12 +31,7 @@ def detect_mode(system_prompt: str, user_prompt: str) -> str:
 
 
 class PromptAnswerKey:
-    """Thread-safe ``prompt -> gold`` registry.
-
-    Lets a test record the gold answer where the evaluation builds the item, then
-    hand this object to ``MockAssistant(answer_key=...)``. Keying on the prompt
-    text avoids any assumption about call ordering.
-    """
+    """Thread-safe prompt-to-gold registry independent of call order."""
 
     def __init__(self) -> None:
         self._golds: Dict[str, Any] = {}
@@ -81,27 +52,7 @@ class PromptAnswerKey:
 
 
 class MockAssistant:
-    """Duck-typed replacement for ``ModelAssistant`` with a tunable skill level.
-
-    Parameters
-    ----------
-    accuracy:
-        Probability of answering with the gold value, when one is known.
-    seed:
-        Salts every decision; changing it reshuffles which items are answered
-        correctly without changing the overall rate.
-    answer_key:
-        ``(user_prompt, system_prompt) -> gold``, or None to always guess.
-    mode:
-        Pin the reply format instead of inferring it from the prompt.
-    guess_includes_gold:
-        When True (the default) a "wrong" answer is drawn from all options and
-        may land on the gold one by chance, like a real model. See
-        :meth:`expected_accuracy`.
-    garbage_rate, idk_rate:
-        Fractions of replies that are unparseable prose, or an explicit
-        abstention, for exercising those branches.
-    """
+    """Tunable, duck-typed ``ModelAssistant`` replacement with seeded decisions."""
 
     def __init__(
         self,
@@ -130,7 +81,7 @@ class MockAssistant:
         self.calls: List[Dict[str, Any]] = []
         self._lock = threading.Lock()
 
-    # ----- assistant interface -----
+    # Assistant interface
 
     def get_name(self) -> str:
         """The name evaluations stamp into results and run directories."""
@@ -172,7 +123,7 @@ class MockAssistant:
             })
         return reply
 
-    # ----- deterministic decisions -----
+    # Deterministic decisions
 
     def _unit(self, *parts: str) -> float:
         """A stable pseudo-random float in [0, 1) derived from *parts*."""
@@ -198,7 +149,7 @@ class MockAssistant:
             choices = [c for c in choices if key(c) != key(gold)] or list(pool)
         return self._pick(choices, "guess", tag, prompt)
 
-    # ----- reply formatting -----
+    # Reply formatting
 
     def _reply(self, mode: str, gold: Any, prompt: str) -> str:
         if self.garbage_rate and self._unit("garbage", prompt) < self.garbage_rate:
@@ -237,14 +188,10 @@ class MockAssistant:
             rows.append(f"Row {r + 1}: [{', '.join(str(c) for c in cells)}]")
         return "Answer:\n" + "\n".join(rows) + "\nAnswer verified for correctness."
 
-    # ----- introspection for assertions -----
+    # Test introspection
 
     def expected_accuracy(self, n_options: int = len(LETTERS)) -> float:
-        """The accuracy a task should report, given the guessing policy.
-
-        With ``guess_includes_gold`` a wrong roll still lands on gold 1-in-
-        ``n_options`` times, so the observed rate exceeds ``accuracy``.
-        """
+        """Include chance hits when wrong guesses may still select the gold option."""
         if not self.guess_includes_gold:
             return self.accuracy
         return self.accuracy + (1.0 - self.accuracy) / n_options

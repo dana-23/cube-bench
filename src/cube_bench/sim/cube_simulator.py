@@ -1,13 +1,4 @@
-"""A lean, test-friendly utility for simulating and visualising a 3x3 Rubik's Cube.
-
-The public surface is intentionally small:
-
-    >>> cube = VirtualCube()
-    >>> cube.scramble(20)
-    >>> cube.to_image("scrambled.png")
-
-Everything else is considered an implementation detail and may change.
-"""
+"""Simulation, state conversion, and rendering for a 3x3 Rubik's Cube."""
 
 from __future__ import annotations
 
@@ -29,9 +20,7 @@ from PIL import Image, ImageDraw, ImageEnhance
 
 import cube_bench.optimal.solver as sv
 
-# ---------------------------------------------------------------------------
 # Configuration helpers
-# ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Palette:
     """Maps logical cube colours to RGB-255 triples."""
@@ -54,7 +43,7 @@ class Palette:
 class NetLayout:
     """Pre-computed positions (top-left y, x) for each cube face in the 2-D net."""
 
-    face_px: int  # width/height of one 3×3 face in pixels
+    face_px: int
     face_gap: int
     # Derived from face_px/face_gap in __post_init__; excluded from eq/hash so the
     # frozen dataclass stays hashable (a dict field would make it unhashable).
@@ -64,7 +53,7 @@ class NetLayout:
         object.__setattr__(self, "positions", self._compute_positions())
 
     def _compute_positions(self) -> Dict[str, Tuple[int, int]]:
-        s, g = self.face_px, self.face_gap  # shorthand
+        s, g = self.face_px, self.face_gap
         return {
             "U": (0, s + g),
             "L": (s + g, 0),
@@ -81,17 +70,11 @@ class NetLayout:
         return h, w
 
 
-# ---------------------------------------------------------------------------
 # Core class
-# ---------------------------------------------------------------------------
 @lru_cache(maxsize=262144)
 def _co_eo_from_facelets(facelets: str) -> tuple[tuple[int, ...], tuple[int, ...]]:
-    """
-    Convert a Kociemba facelet string (URFDLB order, 54 chars) to
-    (corner twists, edge flips). co in {0,1,2} (len=8), eo in {0,1} (len=12).
-    """
+    """Convert URFDLB facelets to corner twists and edge flips."""
     cc = FaceCube(facelets).toCubieCube()
-    # cc.co and cc.eo are Python lists/arrays in the reference implementation
     return tuple(int(x) for x in cc.co[:8]), tuple(int(x) for x in cc.eo[:12])
 
 class VirtualCube:
@@ -122,14 +105,12 @@ class VirtualCube:
     def _canon(self, name: str) -> str:
         return self._COLOR_ALIASES.get(str(name).lower().strip(), str(name).lower().strip())
 
-    # ---------------------------------------------------------------------
     # Construction & simple helpers
-    # ---------------------------------------------------------------------
 
     def __init__(self, cube: Optional[pc.Cube] = None) -> None:
         self._cube: pc.Cube = cube if cube is not None else pc.Cube()
         self._palette = Palette()
-        #: The scramble applied by the most recent :meth:`scramble` call.
+        # Most recently applied scramble.
         self.formula: Optional[pc.Formula] = None
 
     @property
@@ -153,7 +134,6 @@ class VirtualCube:
             return True
 
         def lazy_matching():
-            """Fallback matching"""
             solved_cube = pc.Cube()
             return str(self._cube) == str(solved_cube)
 
@@ -161,7 +141,7 @@ class VirtualCube:
 
     def clone(self) -> "VirtualCube":
         """Return an independent copy of this VirtualCube."""
-        return VirtualCube(self._cube.copy())  # pycuber’s safe copy
+        return VirtualCube(self._cube.copy())
 
     def get_distance(self) -> int:
         """Optimal solution length in half-turn metric (0 when solved)."""
@@ -188,20 +168,12 @@ class VirtualCube:
         return list(eo)
 
     def scramble(self, random_seed: int = 69, n_moves: int = 20, max_tries: int = 50) -> pc.Formula:
-        """
-        Apply n_moves random turns and return the scramble string.
-        - Uses a local RNG (no global seeding side-effects).
-        - Retries if the sequence accidentally solves the cube (capped by max_tries).
-        - Avoids immediate same-face repeats to reduce trivial cancellations.
-        """
+        """Apply locally seeded turns without adjacent same-face moves or solved results."""
         rng = np.random.default_rng(random_seed)
 
-        # If you have faces like U, U', U2, map each move to its face letter
         def face_of(move: str) -> str:
-            # Works for "U", "U'", "U2", "Rw", etc. Adjust if your notation differs.
             return move[0]
 
-        # Simple “no same-face twice in a row” sampler
         def sample_moves() -> list[str]:
             seq = []
             last_face = None
@@ -213,21 +185,17 @@ class VirtualCube:
                 last_face = face_of(m)
             return seq
 
-        # Try up to max_tries to avoid the (rare) identity/cancel-out scramble
         for _ in range(max_tries):
             moves = sample_moves()
             formula = pc.Formula(moves)
             self._cube(formula)
             if not self.is_solved():
                 self.formula = formula
-                # If you truly need a string, return str(...). If Formula is desired, change annotation.
                 return self.formula.copy()
-            # undo and try again
             self._cube(formula.reverse())
 
-        # If we somehow failed all tries, just keep the last one anyway
         self.formula = formula
-        return self.formula.copy() # pc.Formula
+        return self.formula.copy()
 
     def apply(self, moves: str) -> None:
         """Apply a move sequence given in standard notation (e.g. "R U R' U'")."""
@@ -259,19 +227,11 @@ class VirtualCube:
         return [[sq.colour for sq in row] for row in face]
 
     def reset(self):
-        """Resets the cube back to solved state."""
+        """Reset the cube to its solved state."""
         self._cube: pc.Cube = pc.Cube()
 
     def to_kociemba(self, net: str | None = None) -> str:
-        """
-        Export the cube to a 54-character Kociemba facelet string in URFDLB order,
-        robust to any isomorphic recolor. We map *sticker colors -> face letters*
-        using the current six center stickers as the ground truth.
-
-        If `net` is provided (pycuber-style ASCII), we parse it; otherwise we read
-        the cube object directly.
-        """
-        # Build color->face map from *current* centers (scheme-agnostic)
+        """Export URFDLB facelets, using current centres to support isomorphic recolours."""
         color_to_face = {
             str(self._cube.get_face(f)[1][1].colour).lower(): f
             for f in "URFDLB"
@@ -280,8 +240,7 @@ class VirtualCube:
             raise ValueError("Center colors must be unique; current scheme appears invalid.")
 
         def _token_to_faceletter(tok: str) -> str:
-            # tok like 'y','o','g','w','r','b' or full names; normalize to full color
-            col = self._canon(tok)  # 'y'->'yellow', etc., or lowercase passthrough
+            col = self._canon(tok)
             try:
                 return color_to_face[col]
             except KeyError as e:
@@ -290,7 +249,6 @@ class VirtualCube:
         out: list[str] = []
 
         if net is None:
-            # Read stickers directly from the cube in URFDLB, row-major (0..2, 0..2)
             for f in "URFDLB":
                 face = self._cube.get_face(f)
                 for r in range(3):
@@ -301,27 +259,25 @@ class VirtualCube:
                         except KeyError as e:
                             raise ValueError(f"Sticker color '{col}' not present in center mapping.") from e
         else:
-            # Parse pycuber's ASCII net layout and then map tokens via centers
             rows = net.strip().splitlines()
-            token_re = re.compile(r"\[([a-zA-Z]+)\]")  # accepts 'y' or 'yellow'
+            token_re = re.compile(r"\[([a-zA-Z]+)\]")
 
             faces_tokens: Dict[str, List[str]] = {k: [] for k in "ULFRBD"}
             for row_idx, row in enumerate(rows):
                 tokens = token_re.findall(row)
                 if not tokens:
                     continue
-                if row_idx <= 2:  # top 3 rows => U
+                if row_idx <= 2:
                     faces_tokens["U"].extend(tokens)
-                elif 3 <= row_idx <= 5:  # middle band L F R B
+                elif 3 <= row_idx <= 5:
                     if len(tokens) >= 12:
                         faces_tokens["L"].extend(tokens[0:3])
                         faces_tokens["F"].extend(tokens[3:6])
                         faces_tokens["R"].extend(tokens[6:9])
                         faces_tokens["B"].extend(tokens[9:12])
-                else:  # bottom 3 rows => D
+                else:
                     faces_tokens["D"].extend(tokens)
 
-            # Convert tokens to face letters in Kociemba order URFDLB
             for f in "URFDLB":
                 toks = faces_tokens[f]
                 if len(toks) != 9:
@@ -332,30 +288,17 @@ class VirtualCube:
         return "".join(out)
 
     def from_kociemba(self, state54: str | None = None) -> str:
-        """
-        Construct the ASCII net for a Kociemba-ordered 54-char string.
-        We:
-        1) Use Kociemba to get a solution for `state54`,
-        2) Recreate that state on a fresh cube,
-        3) Recolor that fresh cube to match *this instance's current center scheme*,
-        4) Return the ASCII net of that recolored cube.
-
-        This keeps the output visually consistent with any prior isomorphic recolor.
-        """
+        """Build an ASCII net from URFDLB facelets in the current centre colour scheme."""
         if not state54:
-            state54 = self.to_kociemba()  # derive from current cube
+            state54 = self.to_kociemba()
 
-        # 1) get solution moves (state -> solved)
         moves = kociemba.solve(state54)
 
-        # 2) recreate the state on a fresh, default-scheme cube
         temp = pc.Cube()
-        temp(pc.Formula(moves).reverse())  # solved -> state
+        temp(pc.Formula(moves).reverse())
 
-        # 3) recolor `temp` to match THIS cube's current center scheme
-        #    Build a mapping: default_center_color -> current_center_color (by face)
         default_center_by_face = {
-            f: str(pc.Cube().get_face(f)[1][1].colour).lower()  # defaults
+            f: str(pc.Cube().get_face(f)[1][1].colour).lower()
             for f in "URFDLB"
         }
         current_center_by_face = {
@@ -366,63 +309,40 @@ class VirtualCube:
             default_center_by_face[f]: current_center_by_face[f]
             for f in "URFDLB"
         }
-        # sanity: we expect 6 unique target colors under a proper isomorphism
         if len(set(recolor_map.values())) != 6:
-            # Not fatal for rendering, but indicates a non-bijective recolor.
-            # We still proceed; you may want to enforce bijection in recolor_isomorphic.
+            # Rendering tolerates non-bijective maps; mutation validates more strictly.
             pass
 
-        # Apply recolor on `temp` (assign lowercase strings)
         for f in "ULFRBD":
             face = temp.get_face(f)
             for r in range(3):
                 for c in range(3):
                     sq = face[r][c]
                     src = str(sq.colour).lower()
-                    tgt = recolor_map.get(src, src)  # default passthrough
+                    tgt = recolor_map.get(src, src)
                     sq.colour = tgt
 
-        # Reindex internals so hashes reflect new colors if moves are applied later
+        # Copying rebuilds pycuber's colour-keyed internal containers.
         temp = temp.copy()
 
-        # 4) return ASCII net in the *current* color scheme
         return str(temp)
 
-    # ---- PUBLIC RENDER API -------------------------------------------------
+    # Rendering
     def render(self, *, cell_size: int = 60, sticker_border: int = 2, face_gap: int = 40,
                return_type: str = "pil", file_path: Optional[Union[str, Path]] = None,
                dpi: int = 100, add_labels: bool = True):
-        """
-        Render the cube net and return it in a HuggingFace-friendly format.
-
-        Parameters
-        ----------
-        return_type:
-            One of:
-              - "pil": return a PIL.Image (RGB)
-              - "numpy": return a uint8 array (H,W,3)
-              - "tensor": return a float tensor (3,H,W) in [0,1]
-              - "bytes": PNG-encoded bytes
-              - "base64": base64-encoded PNG string (UTF-8)
-              - "figure": matplotlib Figure object (no saving)
-              - "path": write file (requires file_path) and return Path
-        file_path:
-            If provided and return_type == "path" (or any type), the image is saved (PNG by default if suffix omitted).
-        add_labels: Include face labels on the image.
-        """
+        """Render the cube net as ``return_type``, optionally saving ``file_path``."""
         canvas, layout = self._build_canvas(
             cell_size=cell_size,
             sticker_border=sticker_border,
             face_gap=face_gap,
         )
 
-        # Build matplotlib figure only if we need labels OR figure/path
         need_mpl = add_labels or return_type in {"figure", "path"} or file_path is not None
         if need_mpl:
             fig = self._canvas_to_figure(canvas, layout, dpi=dpi, add_labels=add_labels)
             if file_path:
                 file_path = Path(file_path)
-                # Use suffix if given else default to .png
                 if not file_path.suffix:
                     file_path = file_path.with_suffix(".png")
                 fig.savefig(
@@ -432,27 +352,24 @@ class VirtualCube:
                     pad_inches=0.1,
                     facecolor=fig.get_facecolor(),
                 )
-            # Extract numpy array (with labels baked in) if needed in another format
             if return_type not in {"figure", "path"}:
                 fig.canvas.draw()
-                # New API: get an RGBA buffer (H * W * 4 bytes)
                 rgba = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)
                 w, h = fig.canvas.get_width_height()
 
-                # Detect and handle HiDPI/Retina scaling (buffer size > logical size)
+                # Retina buffers can be larger than the figure's logical dimensions.
                 scale = int(np.sqrt(rgba.size / (w * h * 4)))
                 if scale > 1:
                     w, h = w * scale, h * scale
 
                 rgba = rgba.reshape(h, w, 4)
 
-                # Drop alpha (matplotlib may have composited background already)
-                canvas = rgba[..., :3].copy()   # copy if you plan to close fig soon
+                canvas = rgba[..., :3].copy()
 
             if return_type != "figure":
                 plt.close(fig)
         else:
-            fig = None  # not built
+            fig = None
 
         if return_type == "figure":
             return fig
@@ -463,7 +380,7 @@ class VirtualCube:
             return Path(file_path)
 
         if return_type == "numpy":
-            return canvas  # (H,W,3) uint8
+            return canvas
 
         if return_type == "pil":
             if Image is None:
@@ -472,7 +389,7 @@ class VirtualCube:
 
         if return_type == "tensor":
             tensor = torch.from_numpy(canvas).permute(2, 0, 1).float() / 255.0
-            return tensor  # (3,H,W)
+            return tensor
 
         if return_type in {"bytes", "base64"}:
             if Image is None:
@@ -486,28 +403,14 @@ class VirtualCube:
             return base64.b64encode(data).decode("utf-8")
         raise ValueError(f"Unknown return_type '{return_type}'.")
 
-    # Backwards-compatible alias
     def to_image(self, file_path: Optional[Union[str, Path]] = None, **kwargs):
-        """
-        Legacy wrapper: if file_path supplied -> returns Path else returns PIL image.
-        """
+        """Return a PIL image, or a path when ``file_path`` is supplied."""
         return_type = "path" if file_path else "pil"
         return self.render(file_path=file_path, return_type=return_type, **kwargs)
 
-    # ---- IMAGE VARIANTS / AUGMENTATIONS ------------------------------------
+    # Image variants
     def _augment_image(self, img: Image.Image, variant: str, *, brightness: float = 0.8) -> Image.Image:
-        """
-        Stateless image-only transforms applied to a rendered cube image.
-
-        Supported variants:
-            - "clean"   : return as-is
-            - "rot90"   : rotate image by +90° (expand canvas)
-            - "occl"    : central horizontal black band (~15% height)
-            - "bright"  : brightness jitter (default 0.8x, darker)
-
-        Notes:
-            - 'recolor' is NOT here; it's a state-level variant (see render_variant).
-        """
+        """Apply a clean, occluded, or brightness-adjusted image-only variant."""
         variant = (variant or "clean").lower()
         if variant == "clean":
             return img
@@ -529,20 +432,15 @@ class VirtualCube:
 
 
     def recolor_isomorphic(self, color_map: Dict[str, str]) -> None:
-        """
-        Mutates sticker colors safely, then rebuilds pycuber internals so moves still work.
-        """
-        # Build color->center mapping (whatever types pycuber uses)
+        """Recolour stickers and rebuild pycuber's colour-keyed internals."""
         centers = { str(self._cube.get_face(f)[1][1].colour).lower(): self._cube.get_face(f)[1][1].colour
                     for f in "URFDLB" }
 
         norm = { self._canon(k): self._canon(v) for k, v in color_map.items() }
-        # Validate targets exist among centers (same scheme)
         missing = set(norm.values()) - set(centers.keys())
         if missing:
             raise ValueError(f"Unknown target colors in this cube scheme: {sorted(missing)}")
 
-        # Recolor each sticker to the canonical center value
         for f in self.FACE_ORDER:
             face = self._cube.get_face(f)
             for r in range(3):
@@ -552,8 +450,7 @@ class VirtualCube:
                     if src in norm:
                         sq.colour = centers[norm[src]]
 
-        # 🔧 Reindex internal containers so hashes match new colours
-        # Easiest: force a full copy which rebuilds sets/dicts with current hashes
+        # Copying rebuilds sets and dictionaries with the new colour hashes.
         self._cube = self._cube.copy()
 
     def _convert_render(self, pil_img: Image.Image, return_type: str, *, dpi: int = 100,
@@ -590,22 +487,7 @@ class VirtualCube:
                        face_gap: int = 40, dpi: int = 100, add_labels: bool = True,
                        recolor_map: dict[str, str] | None = None, return_type: str = "pil",
                        file_path: Optional[Union[str, Path]] = None):
-        """
-        Render a specific variant of the current cube.
-
-        Variants
-        --------
-        - "clean" : normal render
-        - "recolor" : clone cube, apply isomorphic recolor (requires recolor_map), then render
-        - "occl"  : image-only occlusion band
-        - "bright": image-only brightness jitter (0.8x)
-
-        Notes
-        -----
-        - 'recolor' is a STATE variant (uses a cloned, recolored cube and re-renders).
-        - All others are IMAGE variants (post-process the rendered image).
-        - `return_type` can be "pil" | "numpy" | "tensor" | "bytes" | "base64" | "path" | "figure".
-        """
+        """Render a state-level recolour or an image-only clean/occluded/bright variant."""
         v = (variant or "clean").lower()
 
         if v == "recolor":
@@ -624,7 +506,6 @@ class VirtualCube:
             add_labels=add_labels,
             return_type="pil",
         )
-        # 'recolor' is a state variant: the clone above already carries the change.
         if v != "recolor":
             pil_img = self._augment_image(pil_img, v)
         return self._convert_render(pil_img, return_type, dpi=dpi, file_path=file_path)
@@ -637,9 +518,7 @@ class VirtualCube:
         recolor_map: dict[str, str] | None = None,
         **kwargs
     ) -> Image.Image:
-        """
-        Convenience wrapper: always returns a PIL image for a variant.
-        """
+        """Render one variant as a PIL image."""
         return self.render_variant(
             variant,
             recolor_map=recolor_map,
@@ -656,16 +535,14 @@ class VirtualCube:
         return_type: str = "pil",
         **kwargs
     ) -> dict[str, Image.Image | np.ndarray | torch.Tensor | bytes | str | Path]:
-        """
-        Batch-render multiple variants. Returns a dict {variant_name: image_like}.
-        """
+        """Render multiple variants into a name-to-image mapping."""
         out = {}
         base: Optional[Image.Image] = None
         for v in variants:
             if v.lower() == "recolor":
                 out[v] = self.render_variant(v, recolor_map=recolor_map, return_type=return_type, **kwargs)
                 continue
-            # The image-only variants post-process the same render, so do it once.
+            # Image-only variants share one base render.
             if base is None:
                 base = self.render(
                     return_type="pil",
@@ -681,7 +558,7 @@ class VirtualCube:
 
 
 
-    # ---- INTERNAL: make raw canvas ----------------------------------------
+    # Canvas internals
     def _build_canvas(self, *, cell_size: int, sticker_border: int, face_gap: int):
         layout = NetLayout(face_px=3 * cell_size, face_gap=face_gap)
         h, w = layout.canvas_shape()
@@ -727,7 +604,7 @@ class VirtualCube:
         """Blit a single 3x3 face onto the *canvas* at *origin*."""
         y0, x0 = origin
         face_px = 3 * cell_size
-        face_img = np.zeros((face_px, face_px, 3), dtype=np.uint8)  # black background for borders
+        face_img = np.zeros((face_px, face_px, 3), dtype=np.uint8)
 
         face_grid = self._cube.get_face(face_key)
         for r in range(3):

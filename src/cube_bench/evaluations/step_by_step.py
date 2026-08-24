@@ -62,35 +62,22 @@ class StepByStepTest(BaseTest):
         self.idk_conf_threshold = 50
         self.per_step_idk: List[int] = [0] * n_moves
 
-        # Arm B (history-conditioned): at step t the model sees the whole episode
-        # so far as a multi-turn exchange — S0, a0, S1, a1, …, St. Arm A (Markov,
-        # the default) shows only the current state.
+        # The history arm sees prior state/action turns; the Markov arm sees only
+        # the current state.
         self.history_enabled = bool(history_enabled)
         self.history_images = bool(history_images)
         self.history_full_responses = bool(history_full_responses)
 
-        # Episodes are independent (each keyed by its own seed=idx), so they can
-        # run concurrently; steps WITHIN an episode stay serial (closed-loop).
-        # >1 is for the remote API models (Claude/Gemini/OpenAI), whose generate()
-        # builds a fresh client per call and is safe to call from many threads.
-        # Keep at 1 for local HF/vLLM models.
+        # Episodes may run concurrently, but their closed-loop steps remain serial.
+        # Local HF/vLLM models should use one worker.
         self.concurrency = max(1, int(concurrency))
 
-        # Per-episode checkpointing: each completed episode is appended to a JSONL
-        # sidecar as soon as it finishes, so an interruption (crash, Ctrl-C, spend
-        # limit) never loses completed work. Re-running the same config resumes,
-        # skipping episodes already on disk. Keyed by model/arm/n_moves/samples.
+        # A config-keyed JSONL sidecar makes completed episodes resumable.
         self.checkpoint = bool(checkpoint)
         self.checkpoint_dir = checkpoint_dir
 
-        # Seed/replay: reuse the first ``seed_prefix`` steps of each episode from a
-        # prior run (``seed_run`` JSON), then continue the closed loop in THIS arm's
-        # mode. Only valid where the seed's decision was made under conditions
-        # identical to this arm — i.e. the pre-history prefix. For a Markov arm
-        # seeded from a History run that means seed_prefix=1 (t=1 has no history),
-        # which guarantees the two arms share an identical t=1 and enter t=2 from
-        # the same state — a clean, item-paired comparison at the first step where
-        # history can act.
+        # Replay is valid only through the prefix where both arms had identical
+        # context; for Markov versus history, that is normally the first step.
         self.seed_prefix = max(0, int(seed_prefix))
         self._seed_steps: Dict[int, List[Dict[str, Any]]] = {}
         self.seed_run = seed_run
@@ -123,7 +110,7 @@ class StepByStepTest(BaseTest):
         return (pred == gold_letter), pred
 
     def _build_prompts(self, kwargs: Dict[str, Any]) -> Tuple[str, str]:
-        """(sys, user). If IDK is enabled, use the abstention-aware template; otherwise PromptFactory."""
+        """Build standard prompts or the abstention-aware variant."""
         if not self.idk_enabled:
             return PromptFactory.get("step_by_step", **kwargs)
 
@@ -173,9 +160,7 @@ class StepByStepTest(BaseTest):
         return sys_prompt, user_prompt
 
     def _run_episode(self, idx: int) -> Dict[str, Any]:
-        """Run one full episode (seed=idx). Steps stay serial; all counters are
-        episode-local and returned for the caller to merge, so the method mutates
-        no shared state and is safe to call from many threads at once."""
+        """Run a serial episode with thread-safe, episode-local counters."""
         cube = VirtualCube()
         scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves)
         solution_path = self.teacher_path(scramble)
@@ -241,9 +226,7 @@ class StepByStepTest(BaseTest):
             )
 
             if replay:
-                # Reuse the prior run's decision at this step. It is only valid to
-                # do so where conditions were identical to this arm; we assert the
-                # regenerated state and MCQ match the seed's to guarantee that.
+                # Replay only a matching state and MCQ from the prior run.
                 seed = seed_steps[step_i]
                 if state_text != seed["cube_state"]:
                     raise AssertionError(f"[ep {idx} step {step_i}] seed state mismatch (scramble/seeds drifted)")
@@ -424,14 +407,12 @@ class StepByStepTest(BaseTest):
         return {s["sample_id"]: s["steps_data"] for s in p["samples"]}
 
     def _checkpoint_path(self, num_samples: int) -> Optional[Path]:
-        """Stable, config-keyed JSONL path (independent of the per-run timestamped
-        output dir), so re-runs of the same config find the prior progress."""
+        """Return the stable, config-keyed checkpoint path outside the run directory."""
         if not self.checkpoint:
             return None
         base = Path(self.checkpoint_dir) if self.checkpoint_dir else Path.cwd() / "checkpoints" / "step_by_step"
         arm = "history" if self.history_enabled else "markov"
-        # A seeded/branched run is a distinct experiment from a plain one — key it
-        # separately so it never resumes from (or overwrites) a plain-run checkpoint.
+        # Keep seeded branches separate from plain-run checkpoints.
         seed_tag = f"_seeded-{Path(self.seed_run).stem}-p{self.seed_prefix}" if self._seed_steps else ""
         key = f"{self.assistant.get_name()}_{arm}_d{self.n_moves}_n{num_samples}{seed_tag}"
         safe = "".join(c if (c.isalnum() or c in "-._") else "_" for c in key)
@@ -457,7 +438,6 @@ class StepByStepTest(BaseTest):
     def run(self, num_samples: int):
         desc = f"Step-by-step ({self.n_moves} moves)"
 
-        # Resume: load episodes already completed by a prior run of this config.
         ckpt_path = self._checkpoint_path(num_samples)
         results: Dict[int, Dict[str, Any]] = {}
         if ckpt_path is not None:
@@ -475,10 +455,7 @@ class StepByStepTest(BaseTest):
                 with ckpt_lock, open(ckpt_path, "a", encoding="utf-8") as f:
                     f.write(json.dumps({"sample_id": idx, "result": r}) + "\n")
 
-        # Episodes are independent, so run them concurrently when asked; steps
-        # within each episode stay serial (the loop is closed-loop / path-dependent).
-        # A permanently-failed episode (e.g. retries exhausted) is logged and left
-        # out; it stays absent from the checkpoint so a later re-run retries just it.
+        # Failed episodes remain absent from the checkpoint so a later run retries them.
         if todo:
             if self.concurrency > 1:
                 logger.info("Running %d episodes with concurrency=%d", len(todo), self.concurrency)
@@ -506,9 +483,7 @@ class StepByStepTest(BaseTest):
                 f" (checkpoint: {ckpt_path})" if ckpt_path else "",
             )
 
-        # Merge episode results into shared state in seed order — inputs are
-        # seeded by idx, so the saved metrics are identical regardless of the
-        # execution order (only wall-clock latency values differ).
+        # Seed-order merging keeps metrics deterministic across execution orders.
         solve_depths: List[int] = []
         all_sample_logs: List[Dict[str, Any]] = []
         n_correct = n_wrong = n_idk = 0
@@ -533,7 +508,6 @@ class StepByStepTest(BaseTest):
             n_idk += r["n_idk"]
             total_decisions += r["total_decisions"]
 
-        # -------- Aggregate --------
         avg_depth = (sum(solve_depths) / len(solve_depths)) if solve_depths else 0.0
         perfect = sum(1 for d in solve_depths if d == self.n_moves)
         step_acc = [c / t if t else 0.0 for c, t in zip(self.per_step_correct, self.per_step_totals)]

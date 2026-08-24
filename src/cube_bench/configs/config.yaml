@@ -3,18 +3,17 @@ defaults:
   - paths: default
   - _self_
 
-# Model name (any registered model in ModelAssistant)
+# Registered ModelAssistant name.
 model: claude-sonnet-4.5
 
-# Backend: hf | vllm
+# hf | vllm
 backend: hf
 
-# Global run params
 samples: 10
 verbose: 1 # 0=warnings only, 1=info+sample
 log_file: null
 
-# Build phase: if true, just preload optimal solver tables and exit
+# Preload optimal-solver tables and exit.
 build: false
 
 hydra:

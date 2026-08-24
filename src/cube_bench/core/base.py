@@ -19,7 +19,7 @@ from ..io import save_results
 logger = logging.getLogger(__name__)
 
 
-# Unified MCQ answer parsers (accept all formats seen across tests)
+# Accepted MCQ answer formats.
 _ANSWER_TAG_RE = re.compile(r"<\s*ANSWER\s*>\s*([ABCD])\s*<\s*/\s*ANSWER\s*>", re.IGNORECASE)
 _ANSWER_COLON_RE = re.compile(r"\bANSWER\s*[:=]\s*([ABCD])\b", re.IGNORECASE)
 _ANSWER_BRACKET_RE = re.compile(r"<\s*([ABCD])\s*>", re.IGNORECASE)
@@ -32,11 +32,7 @@ _YES_NO_RE = re.compile(r"Answer:\s*(Yes|No)\b", re.IGNORECASE)
 
 
 class BaseTest(ABC):
-    """Abstract base class for all cube-bench tests.
-
-    Provides shared utilities so each subclass only implements its unique logic
-    in ``run(num_samples)``.
-    """
+    """Shared prompting, parsing, scoring, and cube helpers for evaluations."""
 
     test_type: str = "base"
 
@@ -55,11 +51,7 @@ class BaseTest(ABC):
 
     @staticmethod
     def parse_letter(text: Optional[str], options: Optional[Dict[str, str]] = None) -> Optional[str]:
-        """Return 'A'|'B'|'C'|'D' parsed from any of the answer formats, else None.
-
-        If ``options`` is supplied and the model emitted a bare move (e.g. ``R'``),
-        map that move back to its option letter.
-        """
+        """Parse an A-D answer, mapping a tagged bare move through ``options`` if supplied."""
         if not text:
             return None
         m = _ANSWER_TAG_RE.search(text) or _ANSWER_COLON_RE.search(text) or _ANSWER_BRACKET_RE.search(text)
@@ -96,12 +88,7 @@ class BaseTest(ABC):
         pool: Optional[Iterable[str]] = None,
         force_letter: Optional[str] = None,
     ) -> Tuple[Dict[str, str], str]:
-        """Build a 4-option MCQ from a correct move plus 3 distractors.
-
-        ``pool`` defaults to ``VirtualCube.AVAILABLE_MOVES``. If ``force_letter`` is
-        set, the correct move is placed at that letter; otherwise placement is
-        random.
-        """
+        """Build a four-option MCQ, optionally fixing the correct answer's letter."""
         from cube_bench.sim.cube_simulator import VirtualCube
 
         all_moves = list(pool) if pool is not None else list(VirtualCube.AVAILABLE_MOVES)
@@ -128,8 +115,7 @@ class BaseTest(ABC):
         teacher_move: str,
         rng: random.Random,
     ) -> Tuple[Dict[str, str], str]:
-        """MCQ with exactly one progress-making distractor (when one exists),
-        and the rest non-progress. Used by step-by-step."""
+        """Build an MCQ with one progress-making distractor when available."""
         from cube_bench.sim.cube_simulator import VirtualCube
 
         good = self.optimal_first_moves(vc) - {teacher_move}
@@ -156,8 +142,7 @@ class BaseTest(ABC):
 
     @staticmethod
     def gen_mcq_from_good(good_moves: Set[str], rng: random.Random) -> Tuple[Dict[str, str], str]:
-        """Pick a correct move from ``good_moves`` (or any move if empty) and 3
-        non-good distractors. Used by learning-curve."""
+        """Choose from ``good_moves`` and add three non-good distractors."""
         from cube_bench.sim.cube_simulator import VirtualCube
 
         all_moves = list(VirtualCube.AVAILABLE_MOVES)
@@ -188,8 +173,7 @@ class BaseTest(ABC):
 
     @staticmethod
     def state_text(cube) -> str:
-        """Public-API-first textual cube state, with a fallback to the internal
-        pycuber __str__."""
+        """Return the public cube text, falling back to the wrapped pycuber cube."""
         try:
             return str(cube)
         except Exception:
@@ -227,11 +211,7 @@ class BaseTest(ABC):
 
     @staticmethod
     def teacher_path(scramble) -> List[str]:
-        """Moves of the inverse-scramble teacher path.
-
-        Works on a copy: ``Formula.reverse()`` mutates in place, so reversing the
-        caller's scramble directly would leave it holding the solution instead.
-        """
+        """Return the inverse scramble without mutating the caller's ``Formula``."""
         try:
             return str(deepcopy(scramble).reverse()).split()
         except Exception:
@@ -269,8 +249,7 @@ class BaseTest(ABC):
         track_latency: bool = True,
         **kwargs,
     ) -> str:
-        """Single point of entry for ``assistant.generate``. Tracks latency in
-        ``self.latencies`` when ``track_latency`` is True."""
+        """Call ``assistant.generate`` and optionally record its latency."""
         t0 = time.time()
         resp = self.assistant.generate(
             user_prompt=user_prompt,

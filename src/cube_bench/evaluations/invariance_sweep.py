@@ -18,9 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class InvarianceSweepTest(BaseTest):
-    """Closed-loop single-step MCQ under visual perturbations and recolor conflict.
-    Variants supported by VirtualCube: clean, occl, bright, recolor.
-    """
+    """Run single-step MCQs under clean, occluded, bright, and recoloured renders."""
 
     test_type = "invariance_sweep"
 
@@ -178,7 +176,6 @@ class InvarianceSweepTest(BaseTest):
                         latency*1000,
                     )
 
-        # ---------- aggregation ----------
         def _avg(xs: List[float]) -> float:
             return (sum(xs) / len(xs)) if xs else 0.0
 

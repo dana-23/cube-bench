@@ -213,7 +213,6 @@ class ReconstructionTest(BaseTest):
                     (sum(full_acc) / len(full_acc)) if full_acc else 0.0,
                 )
 
-        # Fairness check
         if total_stickers > 0:
             expected_freq = 1.0 / 6.0
             max_dev = 0.0
@@ -240,5 +239,5 @@ class ReconstructionTest(BaseTest):
             "max_prior_deviation": max_dev,
         }
         self.save(result)
-        # Return shape preserved for callers (includes the auto-filled fields would require re-reading)
+        # Avoid re-reading the saved file just to return the pre-save payload.
         return result

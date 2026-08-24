@@ -25,13 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class LearningCurveTest(BaseTest):
-    """Multiple-choice 'learning curve' test, starting from the first Closed-Loop failure.
-
-    For each scramble:
-      1) Closed-Loop until first non-progress / parse failure.
-      2) Up to ``max_attempts`` additional decisions from the post-error state.
-    Metrics are computed only over episodes that entered the LC regime.
-    """
+    """Measure recovery attempts after the first closed-loop failure in each episode."""
 
     test_type = "learning_curve"
     HIST_FIG_NAME = "learning_curve_hist.png"
@@ -107,7 +101,7 @@ class LearningCurveTest(BaseTest):
 
             self._vlog(f"[sample {idx}] pre-phase start d={cube.get_distance()} scramble={list(scramble)}")
 
-            # --- Phase 1: Closed-Loop prelude until first failure ---
+            # Establish the first closed-loop failure.
             failure_happened = False
             failure_reason: Optional[str] = None
 
@@ -178,7 +172,7 @@ class LearningCurveTest(BaseTest):
             pre_fail_reasons.append(failure_reason or "unknown")
             self._vlog(f"[sample {idx}] LC-phase start from failure={failure_reason} d_post={cube.get_distance()}")
 
-            # --- Phase 2: Learning-curve attempts from post-error state ---
+            # Measure attempts from the post-error state.
             attempts = 0
             while not cube.is_solved() and attempts < self.max_attempts:
                 rng = self._sys_rng
@@ -236,7 +230,7 @@ class LearningCurveTest(BaseTest):
             solved_flags.append(solved)
             self._vlog(f"[sample {idx}] LC-phase done solved={solved} attempts={attempts}")
 
-        # --- Aggregates (over post-error episodes only) ---
+        # Aggregate only episodes that reached the post-error phase.
         n = len(attempts_needed)
         if n == 0:
             success_rate = 0.0
@@ -267,7 +261,6 @@ class LearningCurveTest(BaseTest):
             ) / n
             avg_attempts_all = sum(attempts_needed) / n
 
-        # Plot histogram
         fig_path = self.config.results_dir / self.HIST_FIG_NAME
         fig_path.parent.mkdir(parents=True, exist_ok=True)
         try:

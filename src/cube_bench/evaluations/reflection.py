@@ -37,13 +37,8 @@ def _load_reflection_bundle(
     return bundle
 
 
-# The re-answer directive. `legacy` reproduces the arXiv v1 harness, where the directive is
-# switched by whether the reflection asserted error: the asserted branch orders the model to
-# drop its prior answer, the un-asserted branch discourages changing it. That makes any
-# assert-vs-neutral contrast a two-factor change, and it confounds OTR with instruction-
-# following. `neutral` holds one non-directive prompt fixed across every arm, so
-# `assert_incorrect` becomes the single manipulated factor. Everything below the phase
-# paragraph is byte-identical across modes.
+# ``legacy`` changes the directive with assertion status; ``neutral`` fixes one
+# non-directive prompt so ``assert_incorrect`` is the only manipulated factor.
 _LEGACY_PHASE_ASSERTED = (
     "You are in a RE-ANSWER phase: use the provided reflection to avoid the prior mistake.\n"
     "The reflection may be JSON (e.g., keys: diagnosis, keywords, avoid_rules, eval, recommend, prior_answer)\n"
@@ -113,12 +108,7 @@ def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
 
 
 def _draft_from_reflection_dir(run_dir: Path) -> List[Dict[str, Any]]:
-    """Recover a draft pass from a completed reflection run.
-
-    Runs made before `per_item` was added to SolveMovesTest.save() have no draft file, but
-    reflections.jsonl carries (index, prior_answer, initially_correct) and reanswers.jsonl
-    carries the gold letter, which is the whole draft.
-    """
+    """Recover legacy draft data by joining reflection and re-answer JSONL files."""
     refl = _read_jsonl(run_dir / "reflections.jsonl")
     gold = {r["index"]: r.get("gold") for r in _read_jsonl(run_dir / "reanswers.jsonl")}
     return sorted(
@@ -160,12 +150,7 @@ def _resolve_draft(draft_from: Path) -> Tuple[List[Dict[str, Any]], str]:
 
 
 class ReflectionTest(BaseTest):
-    """Maximum-fairness reflection/re-answer evaluation.
-
-    Modes:
-      - reflect_all=True  (default): paired, fair comparison on the *same* set.
-      - reflect_all=False: wrong-only quick pass for Error-Fix Rate (EFR).
-    """
+    """Run paired all-item or wrong-only reflection and re-answer evaluations."""
 
     test_type = "reflection"
 
@@ -258,8 +243,7 @@ class ReflectionTest(BaseTest):
                     f"Cached draft {draft_source} does not cover items 0..{num_samples - 1}."
                 )
             per_item = per_item[:num_samples]
-            # The items are seeded by index, so a cached draft is only reusable if the
-            # regenerated item matches. Guards against an n_moves / generator drift.
+            # Reject cached drafts when seeded item generation has drifted.
             for r in per_item:
                 gold = solver._build_sample(r["id"])["correct_letter"]
                 if r["gold"] != gold:
@@ -267,24 +251,20 @@ class ReflectionTest(BaseTest):
                         f"Draft item {r['id']} gold={r['gold']} but regenerates as {gold}; "
                         f"the cached draft was built from different items."
                     )
-            # A draft item can lack a predicted letter for two very different reasons.
             unparsed = [r["id"] for r in per_item if r["pred"] is None]
             if self.reveal_choice and unparsed:
                 if len(unparsed) == len(per_item):
-                    # Every pred is null => the source ran with reveal_choice=false.
                     raise ValueError(
                         f"reveal_choice=true needs the draft's predicted letters, but every item in "
                         f"{draft_source} has pred=null — that draft came from a reveal_choice=false run."
                     )
-                # An initially-correct item with no parsed answer would corrupt the OTR
-                # denominator: we would assert it was right yet have no choice to reveal.
+                # Correct items without a parsed answer invalidate the OTR denominator.
                 if corrupt := [r["id"] for r in per_item if r["pred"] is None and r["ok"]]:
                     raise ValueError(
                         f"Draft items {corrupt} are marked initially-correct but have no parsed "
                         f"answer in {draft_source}; the OTR denominator would be corrupt."
                     )
-                # Otherwise the draft response simply failed to parse. Mirror the uncached path,
-                # which renders these as '[HIDDEN]'. All are initially-wrong, so OTR is unaffected.
+                # Unparsed wrong answers mirror uncached ``[HIDDEN]`` prompts and do not affect OTR.
                 logger.warning(
                     "[Reflection] %d/%d draft answers did not parse (ids %s). They render as "
                     "'[HIDDEN]' in the reveal prompt, exactly as an uncached run would. All are "
@@ -309,7 +289,7 @@ class ReflectionTest(BaseTest):
             draft_source = "fresh"
             n_draft_unparsed = sum(1 for p in preds if p is None)
 
-        # Always persist the draft so sibling arms can pin to this exact initially-correct set.
+        # Persist the draft so sibling arms share the same initially-correct set.
         (out_dir / "draft.json").write_text(
             json.dumps({"source": draft_source, "num_samples": num_samples, "per_item": per_item}, indent=2),
             encoding="utf-8",

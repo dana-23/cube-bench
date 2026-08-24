@@ -11,10 +11,7 @@ class PromptFactory:
 
     @staticmethod
     def get(prompt_name: str, **kwargs: Any) -> Dict[str, str]:
-        """
-        Fetches the sys/user template for `prompt_name` and
-        applies Python-style formatting with **kwargs.
-        """
+        """Fetch and format the system/user templates for ``prompt_name``."""
         prompt_type = kwargs.get("prompt_type", None)
 
         if prompt_name not in _TEMPLATES:

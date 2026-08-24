@@ -18,16 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class MoveEffectTest(BaseTest):
-    """
-    For each A–D move, label DECREASE / NO_CHANGE / INCREASE vs. distance-to-solved.
-
-    Fairness features:
-    - Per-item: choose the "double" only among classes with >=2 available neighbors (feasible).
-    - Per-depth: adapt target class ratios based on observed P(class has >=2 moves | depth).
-    - Dataset: keep priors close to a per-depth feasible target (and report JSD to both uniform and target).
-    - Slots: rotate which slot holds the doubled class, then balance remaining slots greedily.
-    - Extensive fairness telemetry (priors, slot priors, JSDs, composition histogram, debts, depth-wise stats).
-    """
+    """Label each move's distance effect with depth- and slot-balanced sampling."""
     TAG_RE = re.compile(r"<([ABCD])>\s*(DECREASE|NO[_ ]?CHANGE|INCREASE)\s*</\1>", re.IGNORECASE)
     # Fallback for replies that use "A: DECREASE" instead of the tagged form.
     LETTER_RES = {
@@ -41,31 +32,29 @@ class MoveEffectTest(BaseTest):
     def __init__(self, assistant, config, n_moves: int = 2, verbose: bool = False):
         super().__init__(assistant, config, n_moves, verbose)
 
-        # Global fairness tracking
-        self.double_cycle = ["INCREASE", "NO_CHANGE", "DECREASE"]  # fallback cycle
+        # Fairness state.
+        self.double_cycle = ["INCREASE", "NO_CHANGE", "DECREASE"]
         self.double_idx = 0
-        self.double_slot_cycle = deque(self.SLOTS)  # rotates which slot holds the doubled class
+        self.double_slot_cycle = deque(self.SLOTS)
 
-        self.presented_counts = Counter({c: 0 for c in self.CLASSES})   # gold labels shown overall
+        self.presented_counts = Counter({c: 0 for c in self.CLASSES})
         self.per_slot_counts = {s: Counter({c: 0 for c in self.CLASSES}) for s in self.SLOTS}
-        self.class_debt = Counter()                   # target double chosen but not achieved
-        self.target_double_counts = Counter()         # how often class chosen as target
-        self.target_double_success = Counter()        # how often target achieved
-        self.missing_class_counts = Counter()         # which class absent in A–D
-        self.composition_counts = Counter()           # histogram over (#DEC,#NC,#INC) per item
+        self.class_debt = Counter()
+        self.target_double_counts = Counter()
+        self.target_double_success = Counter()
+        self.missing_class_counts = Counter()
+        self.composition_counts = Counter()
 
-        # Depth-wise tracking for adaptive feasible targets
-        self.depth_item_count = Counter()             # items per depth d
-        self.depth_presented_counts = defaultdict(Counter)  # depth->class->count
-        # depth -> class -> number of items with >= 2 candidates
+        self.depth_item_count = Counter()
+        self.depth_presented_counts = defaultdict(Counter)
         self.depth_feasible2_counts = defaultdict(lambda: Counter({c: 0 for c in self.CLASSES}))
-        self.alpha_smooth = 1.0  # Laplace smoothing for feasibility rates
+        self.alpha_smooth = 1.0
 
-    # ---------- labeling neighbors ----------
+    # Neighbor labels
     def _label_all_neighbors(self, vc: VirtualCube) -> Tuple[Dict[str, List[str]], Dict[str, str]]:
         buckets: Dict[str, List[str]] = {"DECREASE": [], "NO_CHANGE": [], "INCREASE": []}
         labels_by_move: Dict[str, str] = {}
-        old_distance = vc.get_distance()  # compute once
+        old_distance = vc.get_distance()
 
         for m in VirtualCube.AVAILABLE_MOVES:
             c = vc.clone()
@@ -83,7 +72,7 @@ class MoveEffectTest(BaseTest):
 
         return buckets, labels_by_move
 
-    # ---------- fairness math ----------
+    # Fairness metrics
     @staticmethod
     def _safe_prop(count: int, total: int) -> float:
         return (count / total) if total else 0.0
@@ -102,23 +91,16 @@ class MoveEffectTest(BaseTest):
         return 0.5 * _kl(p, m) + 0.5 * _kl(q, m)
 
     def _feasible_target_for_depth(self, d: int) -> Dict[str, float]:
-        """
-        For a given depth d, compute target class ratios for the gold labels
-        under the constraint that per-item we present 4 options: ideally 1-of-each + 1 extra.
-        The extra 0.25 share is distributed among classes in proportion to
-        P(class has >=2 candidates | depth=d).
-        """
+        """Allocate the fourth option by each class's smoothed feasibility at depth ``d``."""
         items = self.depth_item_count[d]
         p2 = {}
-        # Bernoulli estimate with Laplace(1,1) smoothing per class
+        # Laplace smoothing prevents unobserved depths from dominating the target.
         for c in self.CLASSES:
             succ = self.depth_feasible2_counts[d][c]
             p2[c] = (succ + self.alpha_smooth) / (items + 2 * self.alpha_smooth) if items >= 0 else 1/2
         z = sum(p2.values()) or 1.0
         extra_share = {c: (p2[c] / z) * 0.25 for c in self.CLASSES}
-        # base one-per-class (assuming we can usually include at least one of each):
         target = {c: 0.25 + extra_share[c] for c in self.CLASSES}
-        # may be slightly off 1.0 due to smoothing/rounding; normalize
         s = sum(target.values()) or 1.0
         target = {k: v / s for k, v in target.items()}
         return target
@@ -131,31 +113,22 @@ class MoveEffectTest(BaseTest):
             td = self._feasible_target_for_depth(d)
             for c in self.CLASSES:
                 mix[c] += td[c] * (n / total_items)
-        # normalize just in case
         s = sum(mix.values()) or 1.0
         return {k: v / s for k, v in mix.items()}
 
-    # ---------- target double selection ----------
+    # Target selection
     def _pick_target_double(self, d: int, buckets: Dict[str, List[str]]) -> str | None:
-        """
-        Choose which class to double this item:
-        - Only among classes with >= 2 available moves (feasible).
-        - Favor the class most underrepresented vs the per-depth feasible target.
-        - Fallback: None if no class is feasible (we won't "force" an infeasible double).
-        """
+        """Double the most underrepresented feasible class at depth ``d``."""
         feasible = [c for c in self.CLASSES if len(buckets.get(c, [])) >= 2]
         if not feasible:
             return None
 
-        # deficits vs per-depth target based on observed counts so far
         target = self._feasible_target_for_depth(d)
         counts = self.depth_presented_counts[d]
         total = sum(counts.values()) or 1
-        # "desired" counts so far for each class
         desired_counts = {c: target[c] * total for c in self.CLASSES}
         deficits = {c: desired_counts[c] - counts.get(c, 0) for c in self.CLASSES}
 
-        # choose feasible class with largest positive deficit; tie-break by fallback cycle
         best = None
         best_val = -1e9
         for c in feasible:
@@ -166,24 +139,17 @@ class MoveEffectTest(BaseTest):
         if best is not None:
             return best
 
-        # tie-break fallback
         return feasible[self.double_idx % len(feasible)]
 
-    # ---------- slot assignment ----------
+    # Slot assignment
     def _assign_with_double_slot(self, picked: List[Tuple[str, str]], double_cls: str | None) -> Dict[str, str]:
-        """
-        Assign moves to A/B/C/D.
-        - If we have a doubled class, place ONE of its moves into a rotating slot to flatten slot priors.
-        - Assign the remaining moves to the remaining slots by greedy per-slot balancing.
-        """
+        """Rotate the doubled class across slots, then balance the remaining assignments."""
         slots = list(self.SLOTS)
         assignment: Dict[str, str] = {}
 
-        # If we have a doubled class, put one of its moves in the rotating "double slot"
         if double_cls is not None:
             double_slot = self.double_slot_cycle[0]
             self.double_slot_cycle.rotate(-1)
-            # pick one move of the doubled class to occupy the double_slot
             idx = next((i for i, (_, cls) in enumerate(picked) if cls == double_cls), None)
             if idx is not None:
                 move, cls = picked.pop(idx)
@@ -191,9 +157,8 @@ class MoveEffectTest(BaseTest):
                 self.per_slot_counts[double_slot][cls] += 1
                 slots.remove(double_slot)
 
-        # Assign remaining moves by greedy per-slot balancing (rarest classes in this item first)
         cls_freq = Counter(cls for _, cls in picked)
-        pending = sorted(picked, key=lambda x: cls_freq[x[1]])  # rare classes first
+        pending = sorted(picked, key=lambda x: cls_freq[x[1]])
         for move, cls in pending:
             slot = min(slots, key=lambda s, cls=cls: self.per_slot_counts[s][cls])
             assignment[slot] = move
@@ -202,28 +167,19 @@ class MoveEffectTest(BaseTest):
 
         return assignment
 
-    # ---------- core sampler ----------
+    # Option sampling
     def _balanced_sample_ABCD(
         self, d: int, buckets: Dict[str, List[str]]
     ) -> Tuple[Dict[str, str], Dict[str, int], str | None]:
-        """
-        Build A-D so that, when possible, we have one-of-each class plus a feasible double for this item.
-        Returns:
-          options: dict(slot->move)
-          actual_counts: dict(class->count in this item)
-          doubled_class: the class we actually doubled (or None)
-        """
-        # Choose a feasible target to double for this item (or None)
+        """Build A-D with one move per class plus a feasible doubled class when possible."""
         target_double = self._pick_target_double(d, buckets)
         if target_double is not None:
             self.target_double_counts[target_double] += 1
         else:
-            # record a synthetic "attempt" for analysis by picking a cycle class,
-            # but we won't count success since it's infeasible
             self.class_debt["NO_FEASIBLE_DOUBLE"] += 1
 
         chosen_moves: set = set()
-        picked: List[Tuple[str, str]] = []  # (move, cls)
+        picked: List[Tuple[str, str]] = []
         actual_counts = {c: 0 for c in self.CLASSES}
 
         def take(cls: str, k: int) -> List[str]:
@@ -231,7 +187,7 @@ class MoveEffectTest(BaseTest):
             random.shuffle(pool)
             return pool[:k]
 
-        # Step 1: try to take ONE of each class if available
+        # Start with one option from each available class.
         for cls in self.CLASSES:
             got = take(cls, 1)
             if got:
@@ -240,10 +196,10 @@ class MoveEffectTest(BaseTest):
                 picked.append((move, cls))
                 actual_counts[cls] += 1
 
-        # Step 2: try to add the extra from target_double (must have >=2 total and >=1 leftover)
+        # Add the targeted fourth option.
         doubled_class: str | None = None
         if target_double is not None:
-            leftover = take(target_double, 1)  # after one already picked
+            leftover = take(target_double, 1)
             if leftover:
                 move = leftover[0]
                 chosen_moves.add(move)
@@ -252,9 +208,7 @@ class MoveEffectTest(BaseTest):
                 doubled_class = target_double
                 self.target_double_success[target_double] += 1
             else:
-                # feasible by definition means >=2 in bucket; if we couldn't take leftover,
-                # it's because we failed to pick the first target earlier (e.g., class was missing in step 1)
-                # Try to ensure we get two from this class explicitly now:
+                # Recover if the target was not selected during the first pass.
                 got2 = take(target_double, 2 - actual_counts[target_double])
                 for mv in got2:
                     chosen_moves.add(mv)
@@ -266,14 +220,11 @@ class MoveEffectTest(BaseTest):
                 else:
                     self.class_debt[target_double] += 1
 
-        # Step 3: backfill up to 4 moves total if needed
+        # Backfill from the most underrepresented available class.
         while len(picked) < 4:
-            # Prefer the class most underrepresented vs per-depth target (and with available pool)
             target = self._feasible_target_for_depth(d)
-            # compute current per-item composition deficit
             total_here = sum(actual_counts.values()) or 1
-            desired_share = target  # guidance only; we're filling remaining slots
-            # rank classes by (desired - current_share)
+            desired_share = target
             def share(cls):
                 return actual_counts[cls] / total_here
             order = sorted(self.CLASSES, key=lambda c: desired_share[c] - share(c), reverse=True)
@@ -285,33 +236,27 @@ class MoveEffectTest(BaseTest):
                     chosen_moves.add(move)
                     picked.append((move, cls))
                     actual_counts[cls] += 1
-                    # mark doubled class if we just reached 2 for some class and none set yet
                     if doubled_class is None and actual_counts[cls] >= 2:
                         doubled_class = cls
                     filled = True
                     break
             if not filled:
-                break  # safety
+                break
 
-        # Finalize: ensure exactly 4
         picked = picked[:4]
 
-        # Record missing classes
         for cls in self.CLASSES:
             if actual_counts[cls] == 0:
                 self.missing_class_counts[cls] += 1
 
-        # Track composition histogram and possible debt
         comp = (actual_counts["DECREASE"], actual_counts["NO_CHANGE"], actual_counts["INCREASE"])
         self.composition_counts[comp] += 1
         if target_double is not None and doubled_class != target_double:
             self.class_debt[target_double] += 1
 
-        # Assign to slots: rotate the slot for the doubled class to flatten slot priors
         options = self._assign_with_double_slot(picked[:], doubled_class)
-        # Safety shuffle if something went wrong (shouldn't)
+        # Preserve four slots even when a bucket unexpectedly exhausts.
         if len(options) < 4:
-            # fill any missing slot with any leftover move
             remaining_slots = [s for s in self.SLOTS if s not in options]
             leftover_moves = [m for m, _ in picked if m not in options.values()]
             random.shuffle(leftover_moves)
@@ -319,12 +264,11 @@ class MoveEffectTest(BaseTest):
                 if leftover_moves:
                     options[s] = leftover_moves.pop()
                 else:
-                    # last-resort: duplicate a move (shouldn't occur)
                     options[s] = next(iter(options.values()))
 
         return options, actual_counts, doubled_class
 
-    # ---------- prompts ----------
+    # Prompts
     def _face_centers(self, cube: VirtualCube) -> Dict[str, str]:
         return {
             "U_color": str(cube.raw.get_face("U")[1][1].colour),
@@ -360,15 +304,13 @@ class MoveEffectTest(BaseTest):
             "<D> DECREASE|NO_CHANGE|INCREASE </D>\n"
         )
 
-    # ---------- main ----------
     def run(self, num_samples: int):
         micro_correct = 0
         total_labels = 0
         confusion = defaultdict(Counter)  # gold -> pred
         per_class = Counter()
 
-        # option coverage & per-depth accuracy
-        option_mix_ok = Counter()  # how many distinct classes (1..3) present in options
+        option_mix_ok = Counter()
         per_distance = defaultdict(lambda: {"correct": 0, "total": 0})
 
         logger.info("=" * 80)
@@ -380,28 +322,22 @@ class MoveEffectTest(BaseTest):
             cube = VirtualCube()
             scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves)
 
-            # True distance bucket (comparable across n=1..)
             d = cube.get_distance()
             self.depth_item_count[d] += 1
 
-            # Label neighbors & build balanced A–D
             buckets, labels_by_move = self._label_all_neighbors(cube)
 
-            # Update feasibility stats for this depth
             for c in self.CLASSES:
                 if len(buckets.get(c, [])) >= 2:
                     self.depth_feasible2_counts[d][c] += 1
 
             options, _actual_counts_item, _doubled_cls = self._balanced_sample_ABCD(d, buckets)
 
-            # Coverage bookkeeping
             classes_in_item = {labels_by_move[mv] for mv in options.values()}
             option_mix_ok[len(classes_in_item)] += 1
 
-            # Ground truth labels for A–D (reuse labels_by_move)
             truth = {k: labels_by_move[mv] for k, mv in options.items()}
 
-            # Update presented counts (overall & depth-wise)
             for lbl in truth.values():
                 self.presented_counts[lbl] += 1
                 self.depth_presented_counts[d][lbl] += 1
@@ -423,7 +359,6 @@ class MoveEffectTest(BaseTest):
                     if pat:
                         preds[k] = pat.group(1).replace(" ", "_").upper()
 
-            # scoring
             correct_this_item = 0
             for k in "ABCD":
                 gold = truth[k]
@@ -451,7 +386,7 @@ class MoveEffectTest(BaseTest):
                 logger.info("truth:   %s", truth)
                 logger.info("preds:   %s", predictions)
 
-        # --- diagnostics: priors & expected dot ---
+        # Aggregate accuracy and fairness metrics.
         tot = sum(per_class.values())
         tri = ("INCREASE", "NO_CHANGE", "DECREASE")
         priors = {k: self._safe_prop(per_class[k], tot) for k in tri}
@@ -475,7 +410,6 @@ class MoveEffectTest(BaseTest):
                     maj_baseline, prior_sample_baseline, model_expected)
         logger.info("option class coverage counts (distinct classes per item): %s", dict(option_mix_ok))
 
-        # --- micro & macro metrics ---
         micro_acc = micro_correct / total_labels if total_labels else 0.0
 
         pe = model_expected
@@ -497,33 +431,27 @@ class MoveEffectTest(BaseTest):
 
         macro_f1 = sum(per_class_f1[c] for c in tri) / 3.0 if tri else 0.0
 
-        # --- distance-stratified micro ---
         per_distance_acc = {int(d): (v["correct"] / v["total"]) for d, v in per_distance.items() if v["total"]}
 
-        # --- FAIRNESS METRICS / LOGS ---
         uniform = {k: 1 / 3 for k in tri}
         jsd_uniform = self._jsd(priors, uniform)
         max_abs_dev_uniform = max(abs(priors[k] - 1 / 3) for k in tri) if tri else 0.0
 
-        # Feasible target mix across depths (what "fair" should look like given feasibility)
         target_mix = self._overall_feasible_target()
         jsd_target = self._jsd(priors, target_mix)
         max_abs_dev_target = max(abs(priors[k] - target_mix[k]) for k in tri)
 
-        # Slot priors & JSDs (vs uniform and vs target)
         slot_priors = {s: {c: self._safe_prop(self.per_slot_counts[s][c], sum(self.per_slot_counts[s].values()))
                            for c in tri} for s in self.SLOTS}
         slot_jsd_uniform = {s: self._jsd(slot_priors[s], uniform) for s in self.SLOTS}
         slot_jsd_target = {s: self._jsd(slot_priors[s], target_mix) for s in self.SLOTS}
 
-        # Double success rates
         double_success_rate = {}
         for c in self.CLASSES:
             attempts = self.target_double_counts.get(c, 0)
             succ = self.target_double_success.get(c, 0)
             double_success_rate[c] = (succ / attempts) if attempts else 0.0
 
-        # Depth-wise priors & deviation vs uniform and vs feasible target
         priors_by_depth = {}
         dev_by_depth = {}
         for d, cnts in self.depth_presented_counts.items():
@@ -539,13 +467,11 @@ class MoveEffectTest(BaseTest):
                     "jsd_from_target": self._jsd(pd, target_d),
                 }
 
-        # Boolean fairness flags (tune thresholds as needed)
         within5_uniform = all(abs(priors[k] - 1 / 3) <= 0.05 for k in tri)
         within5_target = all(abs(priors[k] - target_mix[k]) <= 0.05 for k in tri)
         slots_within7_uniform = all(all(abs(slot_priors[s][k] - 1 / 3) <= 0.07 for k in tri) for s in self.SLOTS)
         slots_within7_target = all(all(abs(slot_priors[s][k] - target_mix[k]) <= 0.07 for k in tri) for s in self.SLOTS)
 
-        # Logs
         logger.info("FAIRNESS ─ overall JSD(uniform)=%.4f  max|Δ|=%.3f  within±5%%=%s",
                     jsd_uniform, max_abs_dev_uniform, within5_uniform)
         logger.info("FAIRNESS ─ overall JSD(target)=%.4f  max|Δ|=%.3f  within±5%%=%s  target=%s",
@@ -559,7 +485,6 @@ class MoveEffectTest(BaseTest):
         logger.info("FAIRNESS ─ missing-class counts:   %s", dict(self.missing_class_counts))
         logger.info("FAIRNESS ─ composition histogram (#DEC,#NC,#INC): %s", dict(self.composition_counts))
 
-        # save ----------------------------------------------------------------
         fairness_metrics = {
             "overall_jsd_from_uniform": jsd_uniform,
             "overall_max_abs_dev_uniform": max_abs_dev_uniform,

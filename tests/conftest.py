@@ -1,8 +1,4 @@
-"""Make the src-layout package importable when running from a checkout.
-
-``pip install -e .`` is the normal path; this only covers running pytest without
-installing first, and is a no-op once the package is on sys.path.
-"""
+"""Expose the src-layout package when pytest runs from an uninstalled checkout."""
 
 import sys
 from pathlib import Path

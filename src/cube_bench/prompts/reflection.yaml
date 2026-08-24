@@ -1,8 +1,5 @@
-# Each variant carries two prompt pairs:
-#   system / user            -> asserts the prior answer was wrong (the arXiv v1 wording)
-#   system_open / user_open  -> asks the model to judge its prior answer for itself
-# ReflectionTest picks the pair per item from `assert_incorrect`; `{choice_line}` is
-# emptied when `reveal_choice` is false.
+# ``system/user`` asserts error; ``system_open/user_open`` leaves the verdict open.
+# ReflectionTest selects the pair and hides ``choice_line`` when requested.
 
 Unredacted:
   system: |

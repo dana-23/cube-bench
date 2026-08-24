@@ -1,5 +1,4 @@
-# Cube Bench — task runner
-# Assumes a Python environment (venv/conda) is already active.
+# Cube Bench task runner; assumes an active Python environment.
 
 PYTHON ?= python
 PIP    ?= $(PYTHON) -m pip
