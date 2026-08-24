@@ -3,7 +3,6 @@
 
 PYTHON ?= python
 PIP    ?= $(PYTHON) -m pip
-PYLINT_ARGS ?=
 
 .PHONY: help install install-dev build setup check lint test
 
