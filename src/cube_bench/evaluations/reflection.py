@@ -240,10 +240,8 @@ class ReflectionTest(BaseTest):
         logger.info("Running %s Reflection", self.reflection_type)
         logger.info("=" * 80)
 
-        model_name = getattr(self.assistant, "model_name", None) or self.assistant.get_name()
-        if callable(model_name):
-            model_name = model_name()
-        out_dir = self._make_run_dir(str(model_name))
+        model_name = self.assistant.get_name()
+        out_dir = self._make_run_dir(model_name)
 
         # 1) Draft pass via SolveMovesTest (VirtualCube, no dataset dependency)
         solver = SolveMovesTest(

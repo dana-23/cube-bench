@@ -226,13 +226,22 @@ class BaseTest(ABC):
         return (d1 < d0), d0, d1
 
     @staticmethod
-    def teacher_first_move(scramble) -> Optional[str]:
-        """First move of the inverse-scramble teacher path."""
+    def teacher_path(scramble) -> List[str]:
+        """Moves of the inverse-scramble teacher path.
+
+        Works on a copy: ``Formula.reverse()`` mutates in place, so reversing the
+        caller's scramble directly would leave it holding the solution instead.
+        """
         try:
-            path = str(deepcopy(scramble).reverse()).split()
-            return path[0] if path else None
+            return str(deepcopy(scramble).reverse()).split()
         except Exception:
-            return None
+            return []
+
+    @classmethod
+    def teacher_first_move(cls, scramble) -> Optional[str]:
+        """First move of the inverse-scramble teacher path."""
+        path = cls.teacher_path(scramble)
+        return path[0] if path else None
 
     @staticmethod
     def inverse_move(move: str) -> str:

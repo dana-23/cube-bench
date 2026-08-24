@@ -10,7 +10,6 @@ import threading
 import time
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -179,7 +178,7 @@ class StepByStepTest(BaseTest):
         no shared state and is safe to call from many threads at once."""
         cube = VirtualCube()
         scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves)
-        solution_path = str(deepcopy(scramble).reverse()).split()
+        solution_path = self.teacher_path(scramble)
         correct_steps = 0
         teacher_help = 0
 

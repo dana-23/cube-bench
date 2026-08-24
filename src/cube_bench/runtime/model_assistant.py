@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import random
@@ -17,6 +18,7 @@ from abc import ABC, abstractmethod
 from collections import deque
 from dataclasses import dataclass
 from functools import lru_cache
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Type, Union
 
@@ -176,6 +178,13 @@ def _as_pil(img: Optional[Union[Image.Image, Path, str]]) -> Optional[Image.Imag
     return Image.open(str(img)).convert("RGB")
 
 
+def _image_to_png_bytes(img: Union[Image.Image, Path, str]) -> bytes:
+    """Encode a single image input as PNG bytes."""
+    buf = BytesIO()
+    _as_pil(img).save(buf, format="PNG")
+    return buf.getvalue()
+
+
 def _to_device(batch: Any, device: torch.device, dtype: Optional[torch.dtype] = None) -> Any:
     # Supports plain dicts or HF BatchFeature (which has .to)
     try:
@@ -323,6 +332,14 @@ class ModelStrategy(ABC):
         (``image`` only on user turns). Only the API strategies support it."""
 
     #  Helpers
+    def _reject_history(self, history: Optional[List[Dict[str, Any]]]) -> None:
+        """Local strategies cannot condition on prior turns."""
+        if history:
+            raise NotImplementedError(
+                f"[{self.spec.name}] history-conditioned generation is only "
+                "implemented for the API strategies (Claude/Gemini/OpenAI)."
+            )
+
     def _ensure_processor(self) -> None:
         assert AutoProcessor is not None, "transformers not installed"
         # InternVL needs its remote (non-fast) tokenizer with image tokens.
@@ -348,10 +365,6 @@ class ModelStrategy(ABC):
     def cleanup(self) -> None:
         """Drop references to the model, processor and prompt builder."""
         logger.debug("[%s] cleanup", self.spec.name)
-        try:
-            del self.model, self.processor, self.prompt_builder
-        except Exception:
-            pass
         self.model = self.processor = self.prompt_builder = None  # type: ignore
         torch.cuda.empty_cache()
 
@@ -389,11 +402,7 @@ class HuggingFaceStrategy(ModelStrategy):
         history: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
 
-        if history:
-            raise NotImplementedError(
-                f"[{self.spec.name}] history-conditioned generation is only "
-                "implemented for the API strategies (Claude/Gemini/OpenAI)."
-            )
+        self._reject_history(history)
         assert self.prompt_builder is not None and self.processor is not None
         inputs = self.prompt_builder.build_hf_inputs(
             user_prompt=user_prompt,
@@ -513,13 +522,7 @@ class QwenVLStrategy(HuggingFaceStrategy):
         reference: str = "",
         history: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
-        if history:
-            raise NotImplementedError(
-                f"[{self.spec.name}] history-conditioned generation is only "
-                "implemented for the API strategies (Claude/Gemini/OpenAI)."
-            )
-        model = self.model
-        processor = AutoProcessor.from_pretrained(self.spec.path)
+        self._reject_history(history)
 
         # Build messages like the card example (user role only)
         content = []
@@ -535,7 +538,7 @@ class QwenVLStrategy(HuggingFaceStrategy):
         messages = [{"role": "user", "content": content}]
 
         # Preparation for inference (same args as the card)
-        inputs = processor.apply_chat_template(
+        inputs = self.processor.apply_chat_template(
             messages,
             tokenize=True,
             add_generation_prompt=True,
@@ -548,7 +551,7 @@ class QwenVLStrategy(HuggingFaceStrategy):
 
         # Inference: Generation of the output (only max_new_tokens like the card)
         max_new = int(getattr(gen_cfg, "max_new_tokens", 128))
-        generated_ids = model.generate(**inputs, max_new_tokens=max_new)
+        generated_ids = self.model.generate(**inputs, max_new_tokens=max_new)
 
         # Trim prompt tokens from the output (same as the card)
         generated_ids_trimmed = [
@@ -556,7 +559,7 @@ class QwenVLStrategy(HuggingFaceStrategy):
         ]
 
         # Decode (same flags as the card)
-        output_text = processor.batch_decode(
+        output_text = self.processor.batch_decode(
             generated_ids_trimmed,
             skip_special_tokens=True,
             clean_up_tokenization_spaces=False,
@@ -628,11 +631,7 @@ class VllmStrategy(ModelStrategy):
         history: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
 
-        if history:
-            raise NotImplementedError(
-                f"[{self.spec.name}] history-conditioned generation is only "
-                "implemented for the API strategies (Claude/Gemini/OpenAI)."
-            )
+        self._reject_history(history)
         assert self.prompt_builder is not None, "vLLM prompt builder missing"
 
         print(f"Temp={gen_cfg.temperature}")
@@ -679,14 +678,12 @@ class GeminiStrategy(ModelStrategy):
         client = genai.Client()  # picks up GEMINI_API_KEY from env
 
         if history:
-            from io import BytesIO
-
             def _turn_parts(text: str, img: Any) -> List[Any]:
                 parts = [types.Part.from_text(text=text)]
                 if img is not None:
-                    buf = BytesIO()
-                    _as_pil(img).save(buf, format="PNG")
-                    parts.append(types.Part.from_bytes(data=buf.getvalue(), mime_type="image/png"))
+                    parts.append(
+                        types.Part.from_bytes(data=_image_to_png_bytes(img), mime_type="image/png")
+                    )
                 return parts
 
             contents: List[Any] = [
@@ -751,13 +748,7 @@ class OpenAIStrategy(ModelStrategy):
 
     @staticmethod
     def _image_to_data_url(image: Union[Image.Image, Path, str]) -> str:
-        import base64
-        from io import BytesIO
-
-        pil = _as_pil(image)
-        buf = BytesIO()
-        pil.save(buf, format="PNG")
-        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        b64 = base64.b64encode(_image_to_png_bytes(image)).decode("ascii")
         return f"data:image/png;base64,{b64}"
 
     def generate(
@@ -839,13 +830,7 @@ class ClaudeStrategy(ModelStrategy):
 
     @staticmethod
     def _image_to_b64(image: Union[Image.Image, Path, str]) -> str:
-        import base64
-        from io import BytesIO
-
-        pil = _as_pil(image)
-        buf = BytesIO()
-        pil.save(buf, format="PNG")
-        return base64.b64encode(buf.getvalue()).decode("ascii")
+        return base64.b64encode(_image_to_png_bytes(image)).decode("ascii")
 
     def generate(
         self,

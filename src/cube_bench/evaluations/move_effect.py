@@ -29,6 +29,11 @@ class MoveEffectTest(BaseTest):
     - Extensive fairness telemetry (priors, slot priors, JSDs, composition histogram, debts, depth-wise stats).
     """
     TAG_RE = re.compile(r"<([ABCD])>\s*(DECREASE|NO[_ ]?CHANGE|INCREASE)\s*</\1>", re.IGNORECASE)
+    # Fallback for replies that use "A: DECREASE" instead of the tagged form.
+    LETTER_RES = {
+        L: re.compile(rf"{L}\s*:\s*(DECREASE|NO[_ ]?CHANGE|INCREASE)", re.IGNORECASE)
+        for L in "ABCD"
+    }
     CLASSES = ("DECREASE", "NO_CHANGE", "INCREASE")
     SLOTS = "ABCD"
     test_type = "move_effect"
@@ -414,7 +419,7 @@ class MoveEffectTest(BaseTest):
                      for m in self.TAG_RE.finditer(response)}
             for k in "ABCD":
                 if k not in preds:
-                    pat = re.search(rf"{k}\s*:\s*(DECREASE|NO[_ ]?CHANGE|INCREASE)", response, re.IGNORECASE)
+                    pat = self.LETTER_RES[k].search(response)
                     if pat:
                         preds[k] = pat.group(1).replace(" ", "_").upper()
 
