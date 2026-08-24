@@ -114,16 +114,19 @@ class BaseTest(ABC):
         vc,
         teacher_move: str,
         rng: random.Random,
+        *,
+        good_moves: Optional[Set[str]] = None,
     ) -> Tuple[Dict[str, str], str]:
         """Build an MCQ with one progress-making distractor when available."""
         from cube_bench.sim.cube_simulator import VirtualCube
 
-        good = self.optimal_first_moves(vc) - {teacher_move}
+        oracle_moves = self.optimal_first_moves(vc) if good_moves is None else good_moves
+        good = oracle_moves - {teacher_move}
         bad = [m for m in VirtualCube.AVAILABLE_MOVES if m != teacher_move and m not in good]
 
         picks: List[str] = []
         if good:
-            picks.append(rng.choice(list(good)))
+            picks.append(rng.choice(sorted(good)))
         need = 3 - len(picks)
         if len(bad) >= need:
             picks += rng.sample(bad, need)
@@ -147,7 +150,7 @@ class BaseTest(ABC):
 
         all_moves = list(VirtualCube.AVAILABLE_MOVES)
         if good_moves:
-            correct = rng.choice(tuple(good_moves))
+            correct = rng.choice(tuple(sorted(good_moves)))
             pool = [m for m in all_moves if (m != correct and m not in good_moves)]
             if len(pool) >= 3:
                 distractors = rng.sample(pool, 3)

@@ -96,7 +96,7 @@ class LearningCurveTest(BaseTest):
         for idx in tqdm(range(num_samples), desc=f"Learning-curve ({self.n_moves} moves)"):
             total_scrambles += 1
             cube = VirtualCube()
-            scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves)
+            scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves, exact_depth=True)
             plan: Deque[str] = deque(self.teacher_path(scramble))
 
             self._vlog(f"[sample {idx}] pre-phase start d={cube.get_distance()} scramble={list(scramble)}")

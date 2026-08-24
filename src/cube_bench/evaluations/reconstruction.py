@@ -150,9 +150,14 @@ class ReconstructionTest(BaseTest):
             gt: List[List[str]] = []
 
             while not valid_scramble:
+                cube.reset()
                 current_seed = idx if attempt == 0 else (idx * 10000 + attempt)
                 try:
-                    scramble = cube.scramble(random_seed=current_seed, n_moves=self.n_moves)
+                    scramble = cube.scramble(
+                        random_seed=current_seed,
+                        n_moves=self.n_moves,
+                        exact_depth=True,
+                    )
                 except TypeError:
                     random.seed(current_seed)
                     scramble = cube.scramble(n_moves=self.n_moves)

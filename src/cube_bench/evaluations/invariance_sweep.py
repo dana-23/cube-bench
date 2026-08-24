@@ -91,7 +91,7 @@ class InvarianceSweepTest(BaseTest):
         for idx in tqdm(range(num_samples), desc="Invariance sweep test", disable=not self.verbose):
             rng = random.Random(idx)
             cube = VirtualCube()
-            scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves)
+            scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves, exact_depth=True)
 
             correct_move = self.teacher_first_move(scramble)
             if not correct_move:

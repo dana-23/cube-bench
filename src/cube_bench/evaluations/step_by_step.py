@@ -10,6 +10,7 @@ import threading
 import time
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -20,6 +21,52 @@ from cube_bench.prompts.prompt_factory import PromptFactory
 from cube_bench.sim.cube_simulator import VirtualCube
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _StepContext:
+    """Oracle state, prompt, and replay data for one closed-loop decision."""
+
+    episode_idx: int
+    step_idx: int
+    teacher_plan: List[str]
+    teacher_move: str
+    oracle_distance: int
+    good_moves: set[str]
+    state_text: str
+    state_image: Any
+    options: Dict[str, str]
+    gold_letter: str
+    system_prompt: str
+    user_prompt: str
+    replay: bool
+    seed_steps: List[Dict[str, Any]]
+
+
+@dataclass
+class _StepPrediction:
+    """Parsed response and optional latency for one decision."""
+
+    response: str
+    letter: Optional[str]
+    prompt_correct: bool
+    latency: Optional[float] = None
+
+
+@dataclass
+class _StepOutcome:
+    """Episode-local effects produced by resolving one prediction."""
+
+    step_log: Dict[str, Any]
+    teacher_plan: List[str]
+    continue_episode: bool
+    oracle_correct: bool = False
+    wrong: bool = False
+    abstained: bool = False
+    parse_failure: bool = False
+    teacher_help: bool = False
+    confusion_pair: Optional[Tuple[str, str]] = None
+    latency: Optional[float] = None
 
 
 class StepByStepTest(BaseTest):
@@ -159,30 +206,301 @@ class StepByStepTest(BaseTest):
         )
         return sys_prompt, user_prompt
 
+    @staticmethod
+    def _oracle_gold_letter(options: Dict[str, str], good_moves: set[str]) -> str:
+        """Return the letter-tiebroken option among moves that reduce oracle distance."""
+        candidates = [letter for letter, move in options.items() if move in good_moves]
+        if not candidates:
+            raise RuntimeError("MCQ contains no oracle-optimal option")
+        return min(candidates)
+
+    @staticmethod
+    def _refresh_teacher_plan(cube: VirtualCube, plan: List[str], good_moves: set[str]) -> List[str]:
+        """Keep a valid plan or replace a stale plan from the state actually reached."""
+        if plan and plan[0] in good_moves:
+            return plan
+        refreshed = cube.solve().split()
+        if not refreshed or refreshed[0] not in good_moves:
+            raise RuntimeError("Oracle solver did not return a progress-making teacher move")
+        return refreshed
+
+    def _prepare_step(
+        self,
+        cube: VirtualCube,
+        teacher_plan: List[str],
+        episode_idx: int,
+        step_idx: int,
+    ) -> _StepContext:
+        """Build the oracle labels, MCQ, prompt, and replay metadata for one step."""
+        oracle_distance = cube.get_distance()
+        good_moves = self.optimal_first_moves(cube)
+        teacher_plan = self._refresh_teacher_plan(cube, teacher_plan, good_moves)
+        teacher_move = teacher_plan[0]
+        state_text = self.state_text(cube)
+        state_image = cube.to_image()
+
+        seed_bytes = f"{self.n_moves}:{episode_idx}:{step_idx}".encode()
+        seed_int = int.from_bytes(hashlib.sha256(seed_bytes).digest()[:8], "big")
+        step_rng = random.Random(seed_int)
+        options, _teacher_letter = self.gen_mcq_balanced(
+            cube,
+            teacher_move,
+            step_rng,
+            good_moves=good_moves,
+        )
+        gold_letter = self._oracle_gold_letter(options, good_moves)
+        system_prompt, user_prompt = self._build_prompts({
+            "n_moves": oracle_distance,
+            "n_moves_optimal": max(oracle_distance - 1, 0),
+            "textual_representation": state_text,
+            "move_A": options["A"],
+            "move_B": options["B"],
+            "move_C": options["C"],
+            "move_D": options["D"],
+            "metric": "HTM (Half-Turn Metric)",
+        })
+
+        seed_steps = self._seed_steps.get(episode_idx, [])
+        replay = (
+            step_idx < self.seed_prefix
+            and step_idx < len(seed_steps)
+        )
+        return _StepContext(
+            episode_idx=episode_idx,
+            step_idx=step_idx,
+            teacher_plan=teacher_plan,
+            teacher_move=teacher_move,
+            oracle_distance=oracle_distance,
+            good_moves=good_moves,
+            state_text=state_text,
+            state_image=state_image,
+            options=options,
+            gold_letter=gold_letter,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            replay=replay,
+            seed_steps=seed_steps,
+        )
+
+    def _history_payload(self, convo: List[Dict[str, Any]]) -> Optional[List[Dict[str, Any]]]:
+        """Return prior turns in the configured history representation."""
+        if not self.history_enabled or not convo:
+            return None
+        if self.history_images:
+            return list(convo)
+        return [{key: value for key, value in turn.items() if key != "image"} for turn in convo]
+
+    def _predict_step(
+        self,
+        context: _StepContext,
+        convo: List[Dict[str, Any]],
+    ) -> _StepPrediction:
+        """Replay a seeded response or query the assistant for the current step."""
+        if context.replay:
+            seed = context.seed_steps[context.step_idx]
+            if context.state_text != seed["cube_state"]:
+                raise AssertionError(
+                    f"[ep {context.episode_idx} step {context.step_idx}] "
+                    "seed state mismatch (scramble/seeds drifted)"
+                )
+            if context.options != seed["options"] or context.gold_letter != seed["correct_letter"]:
+                raise AssertionError(
+                    f"[ep {context.episode_idx} step {context.step_idx}] "
+                    "seed MCQ mismatch (MCQ generation drifted)"
+                )
+            response = seed.get("full_response", "")
+            letter = seed.get("predicted_letter")
+            return _StepPrediction(response, letter, letter == context.gold_letter)
+
+        started = time.time()
+        response = self.ask(
+            user_prompt=context.user_prompt,
+            system_prompt=context.system_prompt,
+            image=context.state_image,
+            history=self._history_payload(convo),
+            track_latency=False,
+        )
+        latency = time.time() - started
+        prompt_correct, letter = self._eval(response, context.gold_letter)
+        return _StepPrediction(response, letter, prompt_correct, latency)
+
+    def _append_history(
+        self,
+        convo: List[Dict[str, Any]],
+        context: _StepContext,
+        prediction: _StepPrediction,
+    ) -> None:
+        """Append the current turn to the history-arm transcript."""
+        if not self.history_enabled:
+            return
+        convo.append({"role": "user", "text": context.user_prompt, "image": context.state_image})
+        if self.history_full_responses or not prediction.letter or prediction.letter == "IDK":
+            assistant_text = prediction.response
+        else:
+            assistant_text = f"<ANSWER> {prediction.letter} </ANSWER>"
+        convo.append({"role": "assistant", "text": assistant_text})
+
+    @staticmethod
+    def _step_log(
+        context: _StepContext,
+        prediction: _StepPrediction,
+        **extra: Any,
+    ) -> Dict[str, Any]:
+        """Build the shared per-step log fields and merge outcome-specific data."""
+        record = {
+            "step": context.step_idx,
+            "cube_state": context.state_text,
+            "options": context.options,
+            "correct_letter": context.gold_letter,
+            "teacher_move": context.teacher_move,
+            "oracle_good_moves": sorted(context.good_moves),
+            "oracle_distance": context.oracle_distance,
+            "full_response": prediction.response,
+            "predicted_letter": prediction.letter,
+        }
+        record.update(extra)
+        return record
+
+    def _validate_replayed_trajectory(self, cube: VirtualCube, context: _StepContext) -> None:
+        """Ensure an applied replay move reconstructs the seed run's next state."""
+        if not context.replay or context.step_idx + 1 >= len(context.seed_steps):
+            return
+        rebuilt = self.state_text(cube)
+        expected = context.seed_steps[context.step_idx + 1]["cube_state"]
+        if rebuilt != expected:
+            raise AssertionError(
+                f"[ep {context.episode_idx}] rebuilt S{context.step_idx + 1} "
+                "!= seed's logged state (replayed move application diverged)"
+            )
+
+    def _resolve_step(
+        self,
+        cube: VirtualCube,
+        context: _StepContext,
+        prediction: _StepPrediction,
+    ) -> _StepOutcome:
+        """Score and apply one prediction, returning its episode-local effects."""
+        if prediction.letter is None:
+            if self.verbose:
+                logger.info(
+                    "[sample %s] Parse failure at step %s; ending episode.",
+                    context.episode_idx,
+                    context.step_idx + 1,
+                )
+            return _StepOutcome(
+                step_log=self._step_log(
+                    context,
+                    prediction,
+                    is_correct=False,
+                    is_prompt_correct=False,
+                    parse_fail=True,
+                ),
+                teacher_plan=context.teacher_plan,
+                continue_episode=False,
+                parse_failure=True,
+                latency=prediction.latency,
+            )
+
+        if self.idk_enabled and prediction.letter == "IDK":
+            logger.info("Model responded with IDK.")
+            teacher_help = self.idk_policy == "teacher_on_abstain"
+            if teacher_help:
+                cube.apply(context.teacher_move)
+                context.teacher_plan.pop(0)
+            return _StepOutcome(
+                step_log=self._step_log(
+                    context,
+                    prediction,
+                    is_correct=False,
+                    is_prompt_correct=False,
+                    abstained=True,
+                    idk_policy=self.idk_policy,
+                ),
+                teacher_plan=context.teacher_plan,
+                continue_episode=teacher_help,
+                abstained=True,
+                teacher_help=teacher_help,
+                latency=prediction.latency,
+            )
+
+        chosen_move = context.options.get(prediction.letter)
+        oracle_correct = bool(chosen_move in context.good_moves) if chosen_move else False
+        if self.verbose:
+            logger.info("Model's chosen option: %s -> %s", prediction.letter, chosen_move)
+            logger.info(
+                "[Sample: %s Step: %s] Oracle-good moves: %s",
+                context.episode_idx,
+                context.step_idx,
+                sorted(context.good_moves),
+            )
+
+        teacher_plan = context.teacher_plan
+        if chosen_move and oracle_correct:
+            cube.apply(chosen_move)
+            if chosen_move == context.teacher_move:
+                teacher_plan.pop(0)
+            else:
+                teacher_plan = []
+            self._validate_replayed_trajectory(cube, context)
+        elif self.verbose:
+            logger.info(
+                "[sample %s] First error at step %s",
+                context.episode_idx,
+                context.step_idx + 1,
+            )
+
+        return _StepOutcome(
+            step_log=self._step_log(
+                context,
+                prediction,
+                chosen_move=chosen_move,
+                is_correct=oracle_correct,
+                is_prompt_correct=prediction.prompt_correct,
+            ),
+            teacher_plan=teacher_plan,
+            continue_episode=oracle_correct,
+            oracle_correct=oracle_correct,
+            wrong=not oracle_correct,
+            confusion_pair=(context.teacher_move, chosen_move) if chosen_move else None,
+            latency=prediction.latency,
+        )
+
+    def _run_step(
+        self,
+        cube: VirtualCube,
+        teacher_plan: List[str],
+        episode_idx: int,
+        step_idx: int,
+        convo: List[Dict[str, Any]],
+    ) -> _StepOutcome:
+        """Prepare, predict, record, and resolve one closed-loop step."""
+        context = self._prepare_step(cube, teacher_plan, episode_idx, step_idx)
+        prediction = self._predict_step(context, convo)
+        self._append_history(convo, context, prediction)
+        return self._resolve_step(cube, context, prediction)
+
     def _run_episode(self, idx: int) -> Dict[str, Any]:
         """Run a serial episode with thread-safe, episode-local counters."""
         cube = VirtualCube()
-        scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves)
-        solution_path = self.teacher_path(scramble)
+        scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves, exact_depth=True)
+        initial_solution_path = self.teacher_path(scramble)
+        teacher_plan = list(initial_solution_path)
         correct_steps = 0
         teacher_help = 0
 
         if self.verbose:
             logger.info("[sample %s] Scramble: %s", idx, scramble)
-            logger.info("[sample %s] Teacher path: %s", idx, solution_path)
+            logger.info("[sample %s] Initial teacher path: %s", idx, initial_solution_path)
 
         sample_log = {
             "sample_id": idx,
             "scramble": str(scramble),
-            "solution_path": solution_path,
+            "solution_path": initial_solution_path,
             "steps_data": [],
         }
 
-        # Episode transcript for the history arm: alternating user/assistant
-        # turns, one pair per prior step.
+        # Episode transcript for the history arm: alternating turns per prior step.
         convo: List[Dict[str, Any]] = []
-
-        # Episode-local accumulators (merged into shared state after the episode).
         per_step_totals = [0] * self.n_moves
         per_step_correct = [0] * self.n_moves
         per_step_idk = [0] * self.n_moves
@@ -193,184 +511,39 @@ class StepByStepTest(BaseTest):
         parse_failures = 0
         first_error_step: Optional[int] = None
 
-        for step_i, teacher_move in enumerate(solution_path):
+        for step_i in range(self.n_moves):
             if cube.is_solved():
                 break
 
-            state_text = self.state_text(cube)
-            state_img = cube.to_image()
-
-            seed_bytes = f"{self.n_moves}:{idx}:{step_i}".encode()
-            seed_int = int.from_bytes(hashlib.sha256(seed_bytes).digest()[:8], "big")
-            step_rng = random.Random(seed_int)
-
-            options, gold_letter = self.gen_mcq_balanced(cube, teacher_move, step_rng)
-
-            kwargs = {
-                "n_moves": self.n_moves - correct_steps - teacher_help,
-                "n_moves_optimal": (self.n_moves - 1) - correct_steps - teacher_help,
-                "textual_representation": state_text,
-                "move_A": options["A"],
-                "move_B": options["B"],
-                "move_C": options["C"],
-                "move_D": options["D"],
-                "metric": "HTM (Half-Turn Metric)",
-            }
-            sys_prompt, user_prompt = self._build_prompts(kwargs)
-
-            seed_steps = self._seed_steps.get(idx)
-            replay = (
-                seed_steps is not None
-                and step_i < self.seed_prefix
-                and step_i < len(seed_steps)
-            )
-
-            if replay:
-                # Replay only a matching state and MCQ from the prior run.
-                seed = seed_steps[step_i]
-                if state_text != seed["cube_state"]:
-                    raise AssertionError(f"[ep {idx} step {step_i}] seed state mismatch (scramble/seeds drifted)")
-                if options != seed["options"] or gold_letter != seed["correct_letter"]:
-                    raise AssertionError(f"[ep {idx} step {step_i}] seed MCQ mismatch (MCQ generation drifted)")
-                resp = seed.get("full_response", "")
-                pred_letter = seed.get("predicted_letter")
-                is_correct = bool(seed.get("is_correct"))
-            else:
-                history = None
-                if self.history_enabled and convo:
-                    if self.history_images:
-                        history = list(convo)
-                    else:
-                        # Text-serialized history: prior states as text only;
-                        # the current state keeps its image.
-                        history = [{k: v for k, v in t.items() if k != "image"} for t in convo]
-
-                t0 = time.time()
-                resp = self.ask(
-                    user_prompt=user_prompt,
-                    system_prompt=sys_prompt,
-                    image=state_img,
-                    history=history,
-                    track_latency=False,
-                )
-                latencies.append(time.time() - t0)
-
-                is_correct, pred_letter = self._eval(resp, gold_letter)
-
-            options_move = options.get(pred_letter) if pred_letter and pred_letter != "IDK" else None
-
+            outcome = self._run_step(cube, teacher_plan, idx, step_i, convo)
+            teacher_plan = outcome.teacher_plan
+            sample_log["steps_data"].append(outcome.step_log)
             total_decisions += 1
             per_step_totals[step_i] += 1
-
-            if self.history_enabled:
-                convo.append({"role": "user", "text": user_prompt, "image": state_img})
-                if self.history_full_responses or not pred_letter or pred_letter == "IDK":
-                    assistant_text = resp
-                else:
-                    assistant_text = f"<ANSWER> {pred_letter} </ANSWER>"
-                convo.append({"role": "assistant", "text": assistant_text})
-
-            if pred_letter is None:
-                parse_failures += 1
-                sample_log["steps_data"].append({
-                    "step": step_i,
-                    "cube_state": state_text,
-                    "options": options,
-                    "correct_letter": gold_letter,
-                    "full_response": resp,
-                    "predicted_letter": None,
-                    "is_correct": False,
-                    "parse_fail": True,
-                })
-                first_error_step = step_i + 1
-                if self.verbose:
-                    logger.info("[sample %s] Parse failure at step %s; ending episode.", idx, step_i + 1)
-                break
-
-            if self.idk_enabled and pred_letter == "IDK":
-                logger.info("Model responded with IDK.")
-                n_idk += 1
-                per_step_idk[step_i] += 1
-
-                sample_log["steps_data"].append({
-                    "step": step_i,
-                    "cube_state": state_text,
-                    "options": options,
-                    "correct_letter": gold_letter,
-                    "full_response": resp,
-                    "predicted_letter": "IDK",
-                    "is_correct": False,
-                    "abstained": True,
-                    "idk_policy": self.idk_policy,
-                })
-
-                if self.idk_policy == "teacher_on_abstain":
-                    cube.apply(teacher_move)
-                    teacher_help += 1
-                    continue
+            per_step_correct[step_i] += int(outcome.oracle_correct)
+            per_step_idk[step_i] += int(outcome.abstained)
+            correct_steps += int(outcome.oracle_correct)
+            teacher_help += int(outcome.teacher_help)
+            n_correct += int(outcome.oracle_correct)
+            n_wrong += int(outcome.wrong)
+            n_idk += int(outcome.abstained)
+            parse_failures += int(outcome.parse_failure)
+            if outcome.confusion_pair:
+                confusion_pairs.append(outcome.confusion_pair)
+            if outcome.latency is not None:
+                latencies.append(outcome.latency)
+            if not outcome.continue_episode:
                 first_error_step = step_i + 1
                 break
 
-            if self.verbose:
-                logger.info("Model's chosen option: %s -> %s", pred_letter, options_move)
-
-            per_step_correct[step_i] += int(is_correct)
-
-            if pred_letter and pred_letter != "IDK":
-                if is_correct:
-                    n_correct += 1
-                else:
-                    n_wrong += 1
-
-            if options_move is not None:
-                confusion_pairs.append((teacher_move, options_move))
-
-            sample_log["steps_data"].append({
-                "step": step_i,
-                "cube_state": state_text,
-                "options": options,
-                "correct_letter": gold_letter,
-                "full_response": resp,
-                "predicted_letter": pred_letter,
-                "chosen_move": options_move,
-                "is_correct": is_correct,
-            })
-
-            good_moves = self.optimal_first_moves(cube)
-            if self.verbose:
-                logger.info("[Sample: %s Step: %s] Oracle-good moves: %s", idx, step_i, sorted(good_moves))
-
-            made_progress = False
-            if options_move is not None:
-                made_progress, _, _ = self.move_makes_progress(cube, options_move)
-
-            if options_move and (is_correct or options_move in good_moves):
-                cube.apply(options_move)
-                if is_correct:
-                    correct_steps += 1
-            else:
-                if options_move and made_progress:
-                    cube.apply(options_move)
-                else:
-                    first_error_step = step_i + 1
-                    if self.verbose:
-                        logger.info("[sample %s] First error at step %s", idx, step_i + 1)
-                    break
-
-            # Validate trajectory reconstruction: after applying a replayed move,
-            # the rebuilt state must equal the seed run's logged next state.
-            if replay and step_i + 1 < len(seed_steps):
-                rebuilt = self.state_text(cube)
-                expected = seed_steps[step_i + 1]["cube_state"]
-                if rebuilt != expected:
-                    raise AssertionError(
-                        f"[ep {idx}] rebuilt S{step_i + 1} != seed's logged state "
-                        "(replayed move application diverged)"
-                    )
+        solved = cube.is_solved()
+        sample_log["final_solved"] = solved
+        sample_log["oracle_correct_steps"] = correct_steps
 
         return {
             "sample_log": sample_log,
             "correct_steps": correct_steps,
+            "perfect_solve": solved and correct_steps == self.n_moves and teacher_help == 0,
             "per_step_totals": per_step_totals,
             "per_step_correct": per_step_correct,
             "per_step_idk": per_step_idk,
@@ -430,7 +603,11 @@ class StepByStepTest(BaseTest):
                 continue
             try:
                 rec = json.loads(line)
-                results[int(rec["sample_id"])] = rec["result"]
+                result = rec["result"]
+                if "perfect_solve" not in result:
+                    logger.warning("Skipping checkpoint record from an incompatible schema")
+                    continue
+                results[int(rec["sample_id"])] = result
             except Exception as e:  # tolerate a torn last line from a hard kill
                 logger.warning("Skipping malformed checkpoint line: %s", e)
         return results
@@ -485,6 +662,7 @@ class StepByStepTest(BaseTest):
 
         # Seed-order merging keeps metrics deterministic across execution orders.
         solve_depths: List[int] = []
+        perfect_flags: List[bool] = []
         all_sample_logs: List[Dict[str, Any]] = []
         n_correct = n_wrong = n_idk = 0
         total_decisions = 0
@@ -493,6 +671,7 @@ class StepByStepTest(BaseTest):
             r = results[idx]
             all_sample_logs.append(r["sample_log"])
             solve_depths.append(r["correct_steps"])
+            perfect_flags.append(bool(r["perfect_solve"]))
             for i in range(self.n_moves):
                 self.per_step_totals[i] += r["per_step_totals"][i]
                 self.per_step_correct[i] += r["per_step_correct"][i]
@@ -509,7 +688,7 @@ class StepByStepTest(BaseTest):
             total_decisions += r["total_decisions"]
 
         avg_depth = (sum(solve_depths) / len(solve_depths)) if solve_depths else 0.0
-        perfect = sum(1 for d in solve_depths if d == self.n_moves)
+        perfect = sum(perfect_flags)
         step_acc = [c / t if t else 0.0 for c, t in zip(self.per_step_correct, self.per_step_totals)]
         first_err_hist = Counter(self.first_error_step)
         avg_latency = (sum(self.latencies) / len(self.latencies)) if self.latencies else 0.0
@@ -549,7 +728,7 @@ class StepByStepTest(BaseTest):
                 moves.append(mv)
                 states.append(st)
 
-        logger.info("Average Correct Steps (teacher-adherence): %.2f / %s", avg_depth, self.n_moves)
+        logger.info("Average oracle-optimal steps (TA): %.2f / %s", avg_depth, self.n_moves)
         logger.info(f"Perfect Solves: {perfect}/{len(solve_depths)} "
                     f"({(perfect/len(solve_depths))*100:.2f}%)" if solve_depths else "Perfect Solves: 0/0")
         logger.info("Per-step accuracy: %s | Per-step Ns: %s",
@@ -568,6 +747,8 @@ class StepByStepTest(BaseTest):
         )
 
         self.save({
+            "scoring": "oracle-optimal move from the state actually reached",
+            "exact_scramble_depth": True,
             "arm": "history" if self.history_enabled else "markov",
             "history_config": {
                 "enabled": self.history_enabled,

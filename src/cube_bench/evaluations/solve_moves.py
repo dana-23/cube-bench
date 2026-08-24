@@ -26,7 +26,7 @@ class SolveMovesTest(BaseTest):
 
     def _build_sample(self, idx: int) -> Dict[str, Any]:
         cube = VirtualCube()
-        scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves)
+        scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves, exact_depth=True)
 
         if self.n_moves == 1:
             teacher_move = self.teacher_first_move(scramble)

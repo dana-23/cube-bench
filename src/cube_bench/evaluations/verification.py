@@ -44,7 +44,7 @@ class VerificationTest(BaseTest):
 
     def _build_sample(self, idx: int) -> Dict:
         text_cube = VirtualCube()
-        text_cube.scramble(random_seed=idx, n_moves=self.n_moves)
+        text_cube.scramble(random_seed=idx, n_moves=self.n_moves, exact_depth=True)
         front_text = self._front_text(text_cube)
 
         matched = idx % 2 == 0

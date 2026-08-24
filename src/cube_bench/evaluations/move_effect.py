@@ -320,7 +320,7 @@ class MoveEffectTest(BaseTest):
 
         for idx in tqdm(range(num_samples), desc=f"Move-Effect (n_moves={self.n_moves})"):
             cube = VirtualCube()
-            scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves)
+            scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves, exact_depth=True)
 
             d = cube.get_distance()
             self.depth_item_count[d] += 1

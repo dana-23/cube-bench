@@ -167,8 +167,22 @@ class VirtualCube:
         _, eo = _co_eo_from_facelets(self.to_kociemba())
         return list(eo)
 
-    def scramble(self, random_seed: int = 69, n_moves: int = 20, max_tries: int = 50) -> pc.Formula:
-        """Apply locally seeded turns without adjacent same-face moves or solved results."""
+    def scramble(
+        self,
+        random_seed: int = 69,
+        n_moves: int = 20,
+        max_tries: int = 50,
+        *,
+        exact_depth: bool = False,
+    ) -> pc.Formula:
+        """Apply a seeded scramble, optionally requiring exact oracle depth."""
+        if n_moves < 0:
+            raise ValueError("n_moves must be non-negative")
+        if max_tries < 1:
+            raise ValueError("max_tries must be positive")
+        if exact_depth and n_moves > 20:
+            raise ValueError("Exact Rubik's Cube distance cannot exceed 20 in HTM")
+
         rng = np.random.default_rng(random_seed)
 
         def face_of(move: str) -> str:
@@ -189,13 +203,17 @@ class VirtualCube:
             moves = sample_moves()
             formula = pc.Formula(moves)
             self._cube(formula)
-            if not self.is_solved():
-                self.formula = formula
+            accepted = self.get_distance() == n_moves if exact_depth else not self.is_solved()
+            if accepted:
+                self.formula = formula.copy()
                 return self.formula.copy()
-            self._cube(formula.reverse())
+            self._cube(formula.copy().reverse())
 
-        self.formula = formula
-        return self.formula.copy()
+        requirement = f"exact depth {n_moves}" if exact_depth else "a non-solved state"
+        raise RuntimeError(
+            f"Could not generate {requirement} after {max_tries} attempts "
+            f"(seed={random_seed}, n_moves={n_moves})"
+        )
 
     def apply(self, moves: str) -> None:
         """Apply a move sequence given in standard notation (e.g. "R U R' U'")."""
