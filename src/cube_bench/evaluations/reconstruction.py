@@ -24,7 +24,6 @@ class ReconstructionTest(BaseTest):
 
     LOG_EVERY = 25
     MAX_NEW_TOKENS = 2**16
-    DEFAULT_TEMPERATURE = 0.1
     MAX_SINGLE_COLOR_COUNT = 6
 
     GRID_RE = re.compile(
@@ -197,7 +196,6 @@ class ReconstructionTest(BaseTest):
                     system_prompt=sys_prompt,
                     image=image,
                     max_new_tokens=self.MAX_NEW_TOKENS,
-                    temperature=self.DEFAULT_TEMPERATURE,
                 )
                 if self.verbose:
                     logger.debug("Sample %s (attempts=%s)\ngt=%s\nscramble=%s", idx, attempt, gt, str(scramble))

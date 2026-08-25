@@ -45,5 +45,6 @@ artifacts/
 data/
 outputs/
 
-# Bash scripts (Personel convenience only)
-scripts/
+# Notes
+AGENTS.md
+CLAUDE.md

@@ -372,7 +372,6 @@ class ReflectionTest(BaseTest):
                 user_prompt=user,
                 image=sample["image"],
                 max_new_tokens=2**16,
-                temperature=0.4,
             )
             ref_tokens += _count_tokens(usage)
             ref_latency += dt_ms

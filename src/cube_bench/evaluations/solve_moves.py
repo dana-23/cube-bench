@@ -79,7 +79,6 @@ class SolveMovesTest(BaseTest):
                 user_prompt=user_prompt,
                 system_prompt=sys_prompt,
                 image=sample["image"],
-                temperature=0.1,
             )
 
             pred_letter = self.parse_letter(resp, sample["options"])
