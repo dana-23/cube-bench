@@ -187,6 +187,19 @@ def test_inverse_move_handles_blank_input():
     assert BaseTest.inverse_move("   ") == ""
 
 
+# Deterministic item RNG
+
+def test_item_rng_is_reproducible_for_the_same_parts():
+    draws = [BaseTest.item_rng("task", 3, i).random() for i in range(5)]
+    assert draws == [BaseTest.item_rng("task", 3, i).random() for i in range(5)]
+
+
+def test_item_rng_separates_namespaces_and_depths():
+    base = BaseTest.item_rng("task", 3, 0).random()
+    assert BaseTest.item_rng("other", 3, 0).random() != base
+    assert BaseTest.item_rng("task", 5, 0).random() != base
+
+
 # Statistics
 
 def test_wilson_ci_brackets_the_estimate():

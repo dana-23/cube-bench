@@ -81,7 +81,7 @@ class SolveMovesTest(BaseTest):
                 image=sample["image"],
             )
 
-            pred_letter = self.parse_letter(resp, sample["options"])
+            pred_letter = self.parse_letter(resp)
             ok = int(pred_letter == sample["correct_letter"])
             acc_bits.append(ok)
             preds.append(pred_letter)

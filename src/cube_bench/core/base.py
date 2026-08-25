@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import math
 import random
@@ -22,8 +23,6 @@ logger = logging.getLogger(__name__)
 # Accepted MCQ answer formats.
 _ANSWER_TAG_RE = re.compile(r"<\s*ANSWER\s*>\s*([ABCD])\s*<\s*/\s*ANSWER\s*>", re.IGNORECASE)
 _ANSWER_COLON_RE = re.compile(r"\bANSWER\s*[:=]\s*([ABCD])\b", re.IGNORECASE)
-_ANSWER_BRACKET_RE = re.compile(r"<\s*([ABCD])\s*>", re.IGNORECASE)
-_MOVE_TAG_RE = re.compile(r"<ANSWER>\s*([URFDLB](?:2|')?)\s*</ANSWER>", re.IGNORECASE)
 _IDK_RE = re.compile(
     r"(?:<ANSWER>\s*(IDK)\s*</ANSWER>)|(?:\bANSWER\s*[:=]\s*(?:IDK|E)\b)|(?:I\s*DON'?T\s*KNOW)",
     re.IGNORECASE,
@@ -50,21 +49,12 @@ class BaseTest(ABC):
     # ----- MCQ answer parsing -----
 
     @staticmethod
-    def parse_letter(text: Optional[str], options: Optional[Dict[str, str]] = None) -> Optional[str]:
-        """Parse an A-D answer, mapping a tagged bare move through ``options`` if supplied."""
+    def parse_letter(text: Optional[str]) -> Optional[str]:
+        """Parse an A-D answer from ``<ANSWER> X </ANSWER>`` or ``ANSWER: X``."""
         if not text:
             return None
-        m = _ANSWER_TAG_RE.search(text) or _ANSWER_COLON_RE.search(text) or _ANSWER_BRACKET_RE.search(text)
-        if m:
-            return m.group(1).upper()
-        if options:
-            m2 = _MOVE_TAG_RE.search(text)
-            if m2:
-                move = m2.group(1).upper()
-                for letter, mv in options.items():
-                    if mv.upper() == move:
-                        return letter
-        return None
+        m = _ANSWER_TAG_RE.search(text) or _ANSWER_COLON_RE.search(text)
+        return m.group(1).upper() if m else None
 
     @staticmethod
     def parse_idk(text: Optional[str]) -> bool:
@@ -78,6 +68,18 @@ class BaseTest(ABC):
             return None
         m = _YES_NO_RE.search(text)
         return m.group(1).capitalize() if m else None
+
+    # ----- Deterministic item RNG -----
+
+    @staticmethod
+    def item_rng(*parts: Any) -> random.Random:
+        """Return a per-item RNG seeded only by ``parts``.
+
+        Every model therefore draws the same distractors, mismatches and option
+        orders for a given item, independently of execution order or wall clock.
+        """
+        digest = hashlib.sha256(":".join(str(p) for p in parts).encode()).digest()
+        return random.Random(int.from_bytes(digest[:8], "big"))
 
     # ----- MCQ option generators -----
 

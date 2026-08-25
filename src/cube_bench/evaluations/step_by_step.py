@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
-import random
 import threading
 import time
 from collections import Counter, defaultdict
@@ -242,9 +240,7 @@ class StepByStepTest(BaseTest):
         state_text = self.state_text(cube)
         state_image = cube.to_image()
 
-        seed_bytes = f"{self.n_moves}:{episode_idx}:{step_idx}".encode()
-        seed_int = int.from_bytes(hashlib.sha256(seed_bytes).digest()[:8], "big")
-        step_rng = random.Random(seed_int)
+        step_rng = self.item_rng(self.n_moves, episode_idx, step_idx)
         options, _teacher_letter = self.gen_mcq_balanced(
             cube,
             teacher_move,

@@ -169,7 +169,7 @@ class MoveEffectTest(BaseTest):
 
     # Option sampling
     def _balanced_sample_ABCD(
-        self, d: int, buckets: Dict[str, List[str]]
+        self, d: int, buckets: Dict[str, List[str]], rng: random.Random
     ) -> Tuple[Dict[str, str], Dict[str, int], str | None]:
         """Build A-D with one move per class plus a feasible doubled class when possible."""
         target_double = self._pick_target_double(d, buckets)
@@ -184,7 +184,7 @@ class MoveEffectTest(BaseTest):
 
         def take(cls: str, k: int) -> List[str]:
             pool = [m for m in buckets.get(cls, []) if m not in chosen_moves]
-            random.shuffle(pool)
+            rng.shuffle(pool)
             return pool[:k]
 
         # Start with one option from each available class.
@@ -259,7 +259,7 @@ class MoveEffectTest(BaseTest):
         if len(options) < 4:
             remaining_slots = [s for s in self.SLOTS if s not in options]
             leftover_moves = [m for m, _ in picked if m not in options.values()]
-            random.shuffle(leftover_moves)
+            rng.shuffle(leftover_moves)
             for s in remaining_slots:
                 if leftover_moves:
                     options[s] = leftover_moves.pop()
@@ -331,7 +331,9 @@ class MoveEffectTest(BaseTest):
                 if len(buckets.get(c, [])) >= 2:
                     self.depth_feasible2_counts[d][c] += 1
 
-            options, _actual_counts_item, _doubled_cls = self._balanced_sample_ABCD(d, buckets)
+            options, _actual_counts_item, _doubled_cls = self._balanced_sample_ABCD(
+                d, buckets, self.item_rng("move_effect", self.n_moves, idx)
+            )
 
             classes_in_item = {labels_by_move[mv] for mv in options.values()}
             option_mix_ok[len(classes_in_item)] += 1

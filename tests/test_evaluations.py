@@ -17,17 +17,20 @@ def test_public_evaluations_extend_base_class():
 
 
 def test_parse_letter_accepts_supported_answer_formats():
-    options = {"A": "R", "B": "U'", "C": "F2", "D": "L"}
-
     assert EvaluationBase.parse_letter("<ANSWER> B </ANSWER>") == "B"
     assert EvaluationBase.parse_letter("ANSWER: c") == "C"
-    assert EvaluationBase.parse_letter("<d>") == "D"
-    assert EvaluationBase.parse_letter("<ANSWER> U' </ANSWER>", options) == "B"
 
 
 def test_parse_letter_rejects_unstructured_text():
     assert EvaluationBase.parse_letter("I would choose option A") is None
     assert EvaluationBase.parse_letter(None) is None
+
+
+def test_parse_letter_rejects_undocumented_answer_formats():
+    # The protocol admits exactly two forms; a bare bracket or a bare move is a
+    # parse failure, not an answer.
+    assert EvaluationBase.parse_letter("<d>") is None
+    assert EvaluationBase.parse_letter("<ANSWER> U' </ANSWER>") is None
 
 
 def test_parse_idk_accepts_supported_answer_formats():
