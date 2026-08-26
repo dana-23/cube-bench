@@ -2,20 +2,16 @@
 
 from __future__ import annotations
 
-import logging
 from collections import defaultdict
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from tqdm import tqdm
-
-from cube_bench.core import BaseTest
+from cube_bench.core import ItemRecord, SingleAskTest
+from cube_bench.core.metrics import balanced_accuracy
 from cube_bench.prompts.prompt_factory import PromptFactory
 from cube_bench.sim.cube_simulator import VirtualCube
 
-logger = logging.getLogger(__name__)
 
-
-class VerificationTest(BaseTest):
+class VerificationTest(SingleAskTest):
     """Cross-modal Yes/No consistency using VirtualCube (no datasets)."""
 
     test_type = "verification"
@@ -37,6 +33,8 @@ class VerificationTest(BaseTest):
         ("negated", False, "Yes"),
     )
 
+    # ----- Construction -----
+
     def __init__(self, assistant, config, n_moves: int = 3, verbose: bool = False):
         super().__init__(assistant, config, n_moves, verbose)
         self._claims: Dict[str, List[str]] = PromptFactory.get_section("verification", "claims")
@@ -47,16 +45,32 @@ class VerificationTest(BaseTest):
         if len(set(widths.values())) != 1:
             raise ValueError(f"Each polarity needs the same number of surface forms, got {widths}")
 
-    def _front_text(self, cube: VirtualCube) -> str:
-        try:
-            return cube.front_face()
-        except Exception:
-            try:
-                return cube.observe("text")
-            except Exception:
-                return "<<<unavailable>>>"
+        self._sys_prompt = ""
+        self._user_template = ""
+        self._parsed = 0
+        self._yes_preds = 0
+        self._tp = self._tn = self._fp = self._fn = 0
+        self._by_polarity: Dict[str, Dict[str, int]] = {}
+        self._by_template: Dict[str, Dict[str, int]] = {}
 
-    def _build_sample(self, idx: int) -> Dict[str, Any]:
+    def desc(self) -> str:
+        return "Verification Test"
+
+    def setup(self, num_samples: int) -> None:
+        self._sys_prompt, self._user_template = PromptFactory.get("verification")
+        self._parsed = 0
+        self._yes_preds = 0
+        self._tp = self._tn = self._fp = self._fn = 0
+        self._by_polarity = defaultdict(
+            lambda: {"correct": 0, "total": 0, "tp": 0, "tn": 0, "pos": 0, "neg": 0}
+        )
+        self._by_template = defaultdict(
+            lambda: {"correct": 0, "total": 0, "Yes": 0, "No": 0}
+        )
+
+    # ----- Item generation -----
+
+    def build_item(self, idx: int) -> Dict[str, Any]:
         polarity, states_match, expected = self._CELLS[idx % len(self._CELLS)]
         forms = self._claims[polarity]
         form_idx = (idx // len(self._CELLS)) % len(forms)
@@ -85,81 +99,96 @@ class VerificationTest(BaseTest):
             "claim": forms[form_idx].format(front_face=front_text),
         }
 
-    def run(self, num_samples: int) -> Tuple[List[int], float]:
-        sys_prompt, user_tpl = PromptFactory.get("verification")
+    def _front_text(self, cube: VirtualCube) -> str:
+        try:
+            return cube.front_face()
+        except Exception:
+            try:
+                return cube.observe("text")
+            except Exception:
+                return "<<<unavailable>>>"
 
-        accuracies: List[int] = []
-        parsed = 0
-        yes_preds = 0
-        tp = tn = fp = fn = 0
+    # ----- Prompting -----
 
-        by_polarity: Dict[str, Dict[str, int]] = defaultdict(
-            lambda: {"correct": 0, "total": 0, "tp": 0, "tn": 0, "pos": 0, "neg": 0}
+    def build_prompts(self, item: Dict[str, Any]) -> Tuple[str, str]:
+        return self._sys_prompt, self._user_template.format(claim=item["claim"])
+
+    def ask_kwargs(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        return {"image": item["image"], "max_new_tokens": 2 ** 14}
+
+    # ----- Parsing -----
+
+    def parse(self, response: Optional[str]) -> Optional[str]:
+        return self.parse_yes_no(response)
+
+    # ----- Scoring -----
+
+    def score_item(
+        self, item: Dict[str, Any], prediction: Optional[str], response: Optional[str]
+    ) -> ItemRecord:
+        ok = int(prediction is not None and prediction.lower() == item["expected"].lower())
+        self._vlog(
+            "Sample %s [%s, match=%s], Expected: %s, Model prediction: %s",
+            item["index"], item["polarity"], item["states_match"],
+            item["expected"], prediction,
         )
-        by_template: Dict[str, Dict[str, int]] = defaultdict(
-            lambda: {"correct": 0, "total": 0, "Yes": 0, "No": 0}
+        return ItemRecord(
+            index=item["index"],
+            gold=item["expected"],
+            pred=prediction,
+            correct=bool(ok),
+            parsed=prediction is not None,
+            response=response,
+            extra={
+                "ok": ok,
+                "polarity": item["polarity"],
+                "template_id": item["template_id"],
+                "expected": item["expected"],
+            },
         )
 
-        for i in tqdm(range(num_samples), desc="Verification Test"):
-            sample = self._build_sample(i)
-            user_prompt = user_tpl.format(claim=sample["claim"])
+    def accumulate(self, record: ItemRecord) -> None:
+        ok = record.extra["ok"]
+        exp_yes = record.extra["expected"].lower() == "yes"
+        pol = self._by_polarity[record.extra["polarity"]]
+        tpl_stats = self._by_template[record.extra["template_id"]]
+        pol["total"] += 1
+        pol["pos" if exp_yes else "neg"] += 1
+        pol["correct"] += ok
+        tpl_stats["total"] += 1
+        tpl_stats["correct"] += ok
+        tpl_stats[record.extra["expected"]] += 1
 
-            resp = self.ask(
-                user_prompt=user_prompt,
-                system_prompt=sys_prompt,
-                image=sample["image"],
-                max_new_tokens=2**14,
-            )
+        if record.pred is not None:
+            self._parsed += 1
+            pred_yes = record.pred.lower() == "yes"
+            if pred_yes:
+                self._yes_preds += 1
 
-            pred = self.parse_yes_no(resp)
-            ok = int(pred is not None and pred.lower() == sample["expected"].lower())
-            accuracies.append(ok)
+            if exp_yes and pred_yes:
+                self._tp += 1
+                pol["tp"] += 1
+            elif exp_yes and not pred_yes:
+                self._fn += 1
+            elif (not exp_yes) and (not pred_yes):
+                self._tn += 1
+                pol["tn"] += 1
+            else:
+                self._fp += 1
 
-            exp_yes = sample["expected"].lower() == "yes"
-            pol = by_polarity[sample["polarity"]]
-            tpl_stats = by_template[sample["template_id"]]
-            pol["total"] += 1
-            pol["pos" if exp_yes else "neg"] += 1
-            pol["correct"] += ok
-            tpl_stats["total"] += 1
-            tpl_stats["correct"] += ok
-            tpl_stats[sample["expected"]] += 1
+    # ----- Aggregation -----
 
-            if pred is not None:
-                parsed += 1
-                pred_yes = pred.lower() == "yes"
-                if pred_yes:
-                    yes_preds += 1
-
-                if exp_yes and pred_yes:
-                    tp += 1
-                    pol["tp"] += 1
-                elif exp_yes and not pred_yes:
-                    fn += 1
-                elif (not exp_yes) and (not pred_yes):
-                    tn += 1
-                    pol["tn"] += 1
-                else:
-                    fp += 1
-
-            if self.verbose:
-                logger.info(
-                    "Sample %s [%s, match=%s], Expected: %s, Model prediction: %s",
-                    sample['index'], sample['polarity'], sample['states_match'],
-                    sample['expected'], pred,
-                )
-
+    def aggregate(self, records: List[ItemRecord], num_samples: int) -> Dict[str, Any]:
+        accuracies = [record.extra["ok"] for record in records]
         total = num_samples if num_samples else 1
         avg_acc = (sum(accuracies) / total) if accuracies else 0.0
 
-        parse_rate = parsed / total
-        yes_rate = (yes_preds / parsed) if parsed else 0.0
+        parse_rate = self._parsed / total
+        yes_rate = (self._yes_preds / self._parsed) if self._parsed else 0.0
 
-        pos = tp + fn
-        neg = tn + fp
-        tpr = (tp / pos) if pos else 0.0
-        tnr = (tn / neg) if neg else 0.0
-        bal_acc = 0.5 * (tpr + tnr) if (pos or neg) else 0.0
+        pos = self._tp + self._fn
+        neg = self._tn + self._fp
+        bal_acc = balanced_accuracy(self._tp, self._tn, self._fp, self._fn)
 
         polarity_metrics = {
             name: {
@@ -171,7 +200,7 @@ class VerificationTest(BaseTest):
                 ),
                 "yes_label_share": (s["pos"] / s["total"]) if s["total"] else 0.0,
             }
-            for name, s in by_polarity.items()
+            for name, s in self._by_polarity.items()
         }
         template_metrics = {
             name: {
@@ -179,26 +208,14 @@ class VerificationTest(BaseTest):
                 "accuracy": (s["correct"] / s["total"]) if s["total"] else 0.0,
                 "yes_label_share": (s["Yes"] / s["total"]) if s["total"] else 0.0,
             }
-            for name, s in by_template.items()
+            for name, s in self._by_template.items()
         }
         max_label_skew = max(
             (abs(m["yes_label_share"] - 0.5) for m in template_metrics.values()),
             default=0.0,
         )
 
-        logger.info(
-            "Verification metrics: acc=%.3f, bal_acc=%.3f, parse_rate=%.3f, yes_rate=%.3f, "
-            "TP=%d TN=%d FP=%d FN=%d, unparsed=%d",
-            avg_acc, bal_acc, parse_rate, yes_rate, tp, tn, fp, fn, total - parsed,
-        )
-        for name, m in sorted(polarity_metrics.items()):
-            logger.info(
-                "Polarity %-12s n=%-4d acc=%.3f bal_acc=%.3f yes_labels=%.3f",
-                name, m["n"], m["accuracy"], m["balanced_accuracy"], m["yes_label_share"],
-            )
-        logger.info("Max per-template label skew from 50/50: %.3f (target < 0.05)", max_label_skew)
-
-        self.save({
+        return {
             "average_accuracy": avg_acc,
             "num_samples": num_samples,
             "metrics": {
@@ -207,8 +224,8 @@ class VerificationTest(BaseTest):
                 "parse_rate": parse_rate,
                 "parse_violation": 1.0 - parse_rate,
                 "yes_rate": yes_rate,
-                "confusion": {"tp": tp, "tn": tn, "fp": fp, "fn": fn},
-                "unparsed": total - parsed,
+                "confusion": {"tp": self._tp, "tn": self._tn, "fp": self._fp, "fn": self._fn},
+                "unparsed": total - self._parsed,
                 "support": {"pos": pos, "neg": neg},
                 "by_polarity": polarity_metrics,
                 "by_template": template_metrics,
@@ -221,6 +238,33 @@ class VerificationTest(BaseTest):
                 "polarity_reversals": True,
                 "surface_forms_per_polarity": len(next(iter(self._claims.values()))),
             },
-        })
+        }
 
-        return accuracies, avg_acc
+    # ----- Reporting -----
+
+    def summary(self, payload: Dict[str, Any], records: List[ItemRecord]) -> None:
+        metrics = payload["metrics"]
+        confusion = metrics["confusion"]
+        self._logger.info(
+            "Verification metrics: acc=%.3f, bal_acc=%.3f, parse_rate=%.3f, yes_rate=%.3f, "
+            "TP=%d TN=%d FP=%d FN=%d, unparsed=%d",
+            metrics["accuracy"], metrics["balanced_accuracy"], metrics["parse_rate"],
+            metrics["yes_rate"], confusion["tp"], confusion["tn"], confusion["fp"],
+            confusion["fn"], metrics["unparsed"],
+        )
+        for name, m in sorted(metrics["by_polarity"].items()):
+            self._logger.info(
+                "Polarity %-12s n=%-4d acc=%.3f bal_acc=%.3f yes_labels=%.3f",
+                name, m["n"], m["accuracy"], m["balanced_accuracy"], m["yes_label_share"],
+            )
+        self._logger.info(
+            "Max per-template label skew from 50/50: %.3f (target < 0.05)",
+            metrics["max_template_label_skew"],
+        )
+
+    # ----- Results -----
+
+    def result(
+        self, payload: Dict[str, Any], records: List[ItemRecord]
+    ) -> Tuple[List[int], float]:
+        return [record.extra["ok"] for record in records], payload["average_accuracy"]

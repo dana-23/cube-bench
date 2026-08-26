@@ -46,7 +46,7 @@ def fixture_task(monkeypatch):
 
 
 def _samples(task, n):
-    return [task._build_sample(i) for i in range(n)]  # pylint: disable=protected-access
+    return [task.build_item(i) for i in range(n)]
 
 
 # Label balance
@@ -112,7 +112,7 @@ def test_items_are_identical_across_instances(monkeypatch):
     def build(idx):
         task = VerificationTest.__new__(VerificationTest)
         VerificationTest.__init__(task, assistant=None, config=None, n_moves=5)
-        return task._build_sample(idx)  # pylint: disable=protected-access
+        return task.build_item(idx)
 
     for idx in range(12):
         first, second = build(idx), build(idx)
@@ -128,7 +128,7 @@ def test_depth_changes_the_mismatch_draw(monkeypatch):
         task = VerificationTest.__new__(VerificationTest)
         VerificationTest.__init__(task, assistant=None, config=None, n_moves=depth)
         return [
-            task._build_sample(i)["mismatch_move"]  # pylint: disable=protected-access
+            task.build_item(i)["mismatch_move"]
             for i in range(1, 40, 2)
         ]
 
