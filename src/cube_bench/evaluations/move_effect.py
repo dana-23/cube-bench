@@ -2,22 +2,19 @@
 
 from __future__ import annotations
 
-import logging
-import math
 import random
 import re
 from collections import Counter, defaultdict, deque
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from tqdm import tqdm
-
-from cube_bench.core import BaseTest
+from cube_bench.core import ItemRecord, SingleAskTest
+from cube_bench.core.metrics import (
+    cohens_kappa, dot, jensen_shannon, macro_f1, per_class_prf, safe_prop,
+)
 from cube_bench.sim.cube_simulator import VirtualCube
 
-logger = logging.getLogger(__name__)
 
-
-class MoveEffectTest(BaseTest):
+class MoveEffectTest(SingleAskTest):
     """Label each move's distance effect with depth- and slot-balanced sampling."""
     TAG_RE = re.compile(r"<([ABCD])>\s*(DECREASE|NO[_ ]?CHANGE|INCREASE)\s*</\1>", re.IGNORECASE)
     # Fallback for replies that use "A: DECREASE" instead of the tagged form.
@@ -50,6 +47,33 @@ class MoveEffectTest(BaseTest):
         self.depth_feasible2_counts = defaultdict(lambda: Counter({c: 0 for c in self.CLASSES}))
         self.alpha_smooth = 1.0
 
+        self._micro_correct = 0
+        self._total_labels = 0
+        self._confusion: Dict[str, Counter] = defaultdict(Counter)
+        self._per_class: Counter = Counter()
+        self._option_mix_ok: Counter = Counter()
+        self._per_distance: Dict[int, Dict[str, int]] = defaultdict(
+            lambda: {"correct": 0, "total": 0}
+        )
+
+    def desc(self) -> str:
+        return f"Move-Effect (n_moves={self.n_moves})"
+
+    def setup(self, num_samples: int) -> None:
+        self._micro_correct = 0
+        self._total_labels = 0
+        self._confusion = defaultdict(Counter)
+        self._per_class = Counter()
+        self._option_mix_ok = Counter()
+        self._per_distance = defaultdict(lambda: {"correct": 0, "total": 0})
+
+        self._logger.info("=" * 80)
+        self._logger.info("Initializing Move-Effect test on %s", self.assistant.get_name())
+        self._logger.info(
+            "Number of samples: %s | Scramble depth: %s", num_samples, self.n_moves
+        )
+        self._logger.info("=" * 80)
+
     # Neighbor labels
     def _label_all_neighbors(self, vc: VirtualCube) -> Tuple[Dict[str, List[str]], Dict[str, str]]:
         buckets: Dict[str, List[str]] = {"DECREASE": [], "NO_CHANGE": [], "INCREASE": []}
@@ -73,23 +97,6 @@ class MoveEffectTest(BaseTest):
         return buckets, labels_by_move
 
     # Fairness metrics
-    @staticmethod
-    def _safe_prop(count: int, total: int) -> float:
-        return (count / total) if total else 0.0
-
-    @staticmethod
-    def _jsd(p: Dict[str, float], q: Dict[str, float]) -> float:
-        """Jensen-Shannon divergence (base 2). p,q over same keys."""
-        keys = list(p.keys())
-        m = {k: 0.5 * (p[k] + q[k]) for k in keys}
-        def _kl(a, b):
-            s = 0.0
-            for k in keys:
-                if a[k] > 0 and b[k] > 0:
-                    s += a[k] * math.log(a[k] / b[k], 2)
-            return s
-        return 0.5 * _kl(p, m) + 0.5 * _kl(q, m)
-
     def _feasible_target_for_depth(self, d: int) -> Dict[str, float]:
         """Allocate the fourth option by each class's smoothed feasibility at depth ``d``."""
         items = self.depth_item_count[d]
@@ -304,149 +311,173 @@ class MoveEffectTest(BaseTest):
             "<D> DECREASE|NO_CHANGE|INCREASE </D>\n"
         )
 
-    def run(self, num_samples: int):
-        micro_correct = 0
-        total_labels = 0
-        confusion = defaultdict(Counter)  # gold -> pred
-        per_class = Counter()
+    # ----- Item generation -----
 
-        option_mix_ok = Counter()
-        per_distance = defaultdict(lambda: {"correct": 0, "total": 0})
+    def build_item(self, idx: int) -> Dict[str, Any]:
+        cube = VirtualCube()
+        scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves, exact_depth=True)
 
-        logger.info("=" * 80)
-        logger.info("Initializing Move-Effect test on %s", self.assistant.get_name())
-        logger.info("Number of samples: %s | Scramble depth: %s", num_samples, self.n_moves)
-        logger.info("=" * 80)
+        d = cube.get_distance()
+        self.depth_item_count[d] += 1
 
-        for idx in tqdm(range(num_samples), desc=f"Move-Effect (n_moves={self.n_moves})"):
-            cube = VirtualCube()
-            scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves, exact_depth=True)
+        buckets, labels_by_move = self._label_all_neighbors(cube)
 
-            d = cube.get_distance()
-            self.depth_item_count[d] += 1
+        for c in self.CLASSES:
+            if len(buckets.get(c, [])) >= 2:
+                self.depth_feasible2_counts[d][c] += 1
 
-            buckets, labels_by_move = self._label_all_neighbors(cube)
+        options, _actual_counts_item, _doubled_cls = self._balanced_sample_ABCD(
+            d, buckets, self.item_rng("move_effect", self.n_moves, idx)
+        )
 
-            for c in self.CLASSES:
-                if len(buckets.get(c, [])) >= 2:
-                    self.depth_feasible2_counts[d][c] += 1
+        classes_in_item = {labels_by_move[mv] for mv in options.values()}
+        self._option_mix_ok[len(classes_in_item)] += 1
 
-            options, _actual_counts_item, _doubled_cls = self._balanced_sample_ABCD(
-                d, buckets, self.item_rng("move_effect", self.n_moves, idx)
+        truth = {k: labels_by_move[mv] for k, mv in options.items()}
+
+        for lbl in truth.values():
+            self.presented_counts[lbl] += 1
+            self.depth_presented_counts[d][lbl] += 1
+
+        return {
+            "index": idx,
+            "image": None,
+            "distance": d,
+            "scramble": scramble,
+            "buckets": buckets,
+            "options": options,
+            "truth": truth,
+            "centers": self._face_centers(cube),
+            "state_text": self.state_text(cube),
+        }
+
+    # ----- Prompting -----
+
+    def build_prompts(self, item: Dict[str, Any]) -> Tuple[str, str]:
+        return (
+            self._sys_prompt(),
+            self._user_prompt(item["centers"], item["state_text"], item["options"]),
+        )
+
+    def ask_kwargs(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        return {"image": None}
+
+    # ----- Parsing -----
+
+    def parse(self, response: Optional[str]) -> Dict[str, str]:
+        text = response or ""
+        preds = {m.group(1).upper(): m.group(2).upper().replace(" ", "_")
+                 for m in self.TAG_RE.finditer(text)}
+        for k in "ABCD":
+            if k not in preds:
+                pat = self.LETTER_RES[k].search(text)
+                if pat:
+                    preds[k] = pat.group(1).replace(" ", "_").upper()
+        return preds
+
+    # ----- Scoring -----
+
+    def score_item(
+        self, item: Dict[str, Any], prediction: Dict[str, str], response: Optional[str]
+    ) -> ItemRecord:
+        truth = item["truth"]
+        labels = [(k, truth[k], prediction.get(k, "MISSING")) for k in "ABCD"]
+        correct_this_item = sum(int(pred == gold) for _, gold, pred in labels)
+
+        if self.verbose:
+            predictions = {k: prediction.get(k) for k in 'ABCD'}
+            buckets = item["buckets"]
+            self._logger.info(
+                "[%s] d=%s  scramble=%s", item["index"], item["distance"], item["scramble"])
+            self._logger.info(
+                "bucket sizes: DEC=%s, NC=%s, INC=%s",
+                len(buckets['DECREASE']),
+                len(buckets['NO_CHANGE']),
+                len(buckets['INCREASE']),
             )
+            self._logger.info("options: %s", item["options"])
+            self._logger.info("truth:   %s", truth)
+            self._logger.info("preds:   %s", predictions)
 
-            classes_in_item = {labels_by_move[mv] for mv in options.values()}
-            option_mix_ok[len(classes_in_item)] += 1
+        return ItemRecord(
+            index=item["index"],
+            gold=truth,
+            pred=prediction,
+            correct=correct_this_item == 4,
+            parsed=len(prediction) == 4,
+            response=response,
+            extra={
+                "labels": labels,
+                "correct_this_item": correct_this_item,
+                "distance": item["distance"],
+            },
+        )
 
-            truth = {k: labels_by_move[mv] for k, mv in options.items()}
+    def accumulate(self, record: ItemRecord) -> None:
+        for _, gold, pred in record.extra["labels"]:
+            self._per_class[gold] += 1
+            self._confusion[gold][pred] += 1
+            is_right = int(pred == gold)
+            self._micro_correct += is_right
+            self._total_labels += 1
 
-            for lbl in truth.values():
-                self.presented_counts[lbl] += 1
-                self.depth_presented_counts[d][lbl] += 1
+        d = record.extra["distance"]
+        self._per_distance[d]["correct"] += record.extra["correct_this_item"]
+        self._per_distance[d]["total"] += 4
 
-            centers = self._face_centers(cube)
-            state_text = self.state_text(cube)
-            sys_prompt = self._sys_prompt()
-            user_prompt = self._user_prompt(centers, state_text, options)
+    # ----- Aggregation -----
 
-            response = self.ask(
-                user_prompt=user_prompt, system_prompt=sys_prompt, image=None,
-            )
-
-            preds = {m.group(1).upper(): m.group(2).upper().replace(" ", "_")
-                     for m in self.TAG_RE.finditer(response)}
-            for k in "ABCD":
-                if k not in preds:
-                    pat = self.LETTER_RES[k].search(response)
-                    if pat:
-                        preds[k] = pat.group(1).replace(" ", "_").upper()
-
-            correct_this_item = 0
-            for k in "ABCD":
-                gold = truth[k]
-                per_class[gold] += 1
-                pred = preds.get(k, "MISSING")
-                confusion[gold][pred] += 1
-                is_right = int(pred == gold)
-                micro_correct += is_right
-                total_labels += 1
-                correct_this_item += is_right
-
-            per_distance[d]["correct"] += correct_this_item
-            per_distance[d]["total"] += 4
-
-            if self.verbose:
-                predictions = {k: preds.get(k) for k in 'ABCD'}
-                logger.info("[%s] d=%s  scramble=%s", idx, d, scramble)
-                logger.info(
-                    "bucket sizes: DEC=%s, NC=%s, INC=%s",
-                    len(buckets['DECREASE']),
-                    len(buckets['NO_CHANGE']),
-                    len(buckets['INCREASE']),
-                )
-                logger.info("options: %s", options)
-                logger.info("truth:   %s", truth)
-                logger.info("preds:   %s", predictions)
+    def aggregate(self, records: List[ItemRecord], num_samples: int) -> Dict[str, Any]:
+        micro_correct = self._micro_correct
+        total_labels = self._total_labels
+        confusion = self._confusion
+        per_class = self._per_class
+        option_mix_ok = self._option_mix_ok
+        per_distance = self._per_distance
 
         # Aggregate accuracy and fairness metrics.
         tot = sum(per_class.values())
         tri = ("INCREASE", "NO_CHANGE", "DECREASE")
-        priors = {k: self._safe_prop(per_class[k], tot) for k in tri}
+        priors = {k: safe_prop(per_class[k], tot) for k in tri}
 
         pred_totals = Counter()
-        for gold, row in confusion.items():
+        for _gold, row in confusion.items():
             for pred, c in row.items():
                 pred_totals[pred] += c
         pred_tot = sum(pred_totals[k] for k in tri)
         q = {k: (pred_totals[k] / pred_tot) if pred_tot else 0.0 for k in tri}
 
-        def dot(a, b):
-            return sum(a.get(k, 0.0) * b.get(k, 0.0) for k in tri)
         maj_baseline = max(priors.values()) if priors else 0.0
-        prior_sample_baseline = dot(priors, priors)
-        model_expected = dot(priors, q)
+        prior_sample_baseline = dot(priors, priors, tri)
+        model_expected = dot(priors, q, tri)
 
-        logger.info("gold priors π: %s", priors)
-        logger.info("model preds q: %s", q)
-        logger.info("baseline(always majority): %.3f  baseline(prior-sample): %.3f  exp(acc from q·π): %.3f",
+        self._logger.info("gold priors: %s", priors)
+        self._logger.info("model preds q: %s", q)
+        self._logger.info("baseline(always majority): %.3f  baseline(prior-sample): %.3f  exp(acc from q.priors): %.3f",
                     maj_baseline, prior_sample_baseline, model_expected)
-        logger.info("option class coverage counts (distinct classes per item): %s", dict(option_mix_ok))
+        self._logger.info("option class coverage counts (distinct classes per item): %s", dict(option_mix_ok))
 
         micro_acc = micro_correct / total_labels if total_labels else 0.0
 
-        pe = model_expected
-        kappa = (micro_acc - pe) / (1.0 - pe) if (1.0 - pe) > 0 else 0.0
+        kappa = cohens_kappa(micro_acc, model_expected)
 
-        per_class_recall = {}
-        per_class_precision = {}
-        per_class_f1 = {}
-        for cls in tri:
-            tp = confusion[cls].get(cls, 0)
-            fn = sum(v for k, v in confusion[cls].items() if k != cls)
-            fp = sum(confusion[g].get(cls, 0) for g in tri if g != cls)
-            rec = tp / (tp + fn) if (tp + fn) else 0.0
-            prec = tp / (tp + fp) if (tp + fp) else 0.0
-            f1 = (2 * prec * rec / (prec + rec)) if (prec + rec) else 0.0
-            per_class_recall[cls] = rec
-            per_class_precision[cls] = prec
-            per_class_f1[cls] = f1
-
-        macro_f1 = sum(per_class_f1[c] for c in tri) / 3.0 if tri else 0.0
+        per_class_precision, per_class_recall, per_class_f1 = per_class_prf(confusion, tri)
+        macro = macro_f1(per_class_f1, tri)
 
         per_distance_acc = {int(d): (v["correct"] / v["total"]) for d, v in per_distance.items() if v["total"]}
 
         uniform = {k: 1 / 3 for k in tri}
-        jsd_uniform = self._jsd(priors, uniform)
+        jsd_uniform = jensen_shannon(priors, uniform)
         max_abs_dev_uniform = max(abs(priors[k] - 1 / 3) for k in tri) if tri else 0.0
 
         target_mix = self._overall_feasible_target()
-        jsd_target = self._jsd(priors, target_mix)
+        jsd_target = jensen_shannon(priors, target_mix)
         max_abs_dev_target = max(abs(priors[k] - target_mix[k]) for k in tri)
 
-        slot_priors = {s: {c: self._safe_prop(self.per_slot_counts[s][c], sum(self.per_slot_counts[s].values()))
+        slot_priors = {s: {c: safe_prop(self.per_slot_counts[s][c], sum(self.per_slot_counts[s].values()))
                            for c in tri} for s in self.SLOTS}
-        slot_jsd_uniform = {s: self._jsd(slot_priors[s], uniform) for s in self.SLOTS}
-        slot_jsd_target = {s: self._jsd(slot_priors[s], target_mix) for s in self.SLOTS}
+        slot_jsd_uniform = {s: jensen_shannon(slot_priors[s], uniform) for s in self.SLOTS}
+        slot_jsd_target = {s: jensen_shannon(slot_priors[s], target_mix) for s in self.SLOTS}
 
         double_success_rate = {}
         for c in self.CLASSES:
@@ -459,14 +490,14 @@ class MoveEffectTest(BaseTest):
         for d, cnts in self.depth_presented_counts.items():
             tot_d = sum(cnts.values())
             if tot_d:
-                pd = {k: self._safe_prop(cnts.get(k, 0), tot_d) for k in tri}
+                pd = {k: safe_prop(cnts.get(k, 0), tot_d) for k in tri}
                 priors_by_depth[int(d)] = pd
                 target_d = self._feasible_target_for_depth(d)
                 dev_by_depth[int(d)] = {
                     "max_abs_dev_uniform": max(abs(pd[k] - 1 / 3) for k in tri),
-                    "jsd_from_uniform": self._jsd(pd, uniform),
+                    "jsd_from_uniform": jensen_shannon(pd, uniform),
                     "max_abs_dev_target": max(abs(pd[k] - target_d[k]) for k in tri),
-                    "jsd_from_target": self._jsd(pd, target_d),
+                    "jsd_from_target": jensen_shannon(pd, target_d),
                 }
 
         within5_uniform = all(abs(priors[k] - 1 / 3) <= 0.05 for k in tri)
@@ -474,18 +505,22 @@ class MoveEffectTest(BaseTest):
         slots_within7_uniform = all(all(abs(slot_priors[s][k] - 1 / 3) <= 0.07 for k in tri) for s in self.SLOTS)
         slots_within7_target = all(all(abs(slot_priors[s][k] - target_mix[k]) <= 0.07 for k in tri) for s in self.SLOTS)
 
-        logger.info("FAIRNESS ─ overall JSD(uniform)=%.4f  max|Δ|=%.3f  within±5%%=%s",
-                    jsd_uniform, max_abs_dev_uniform, within5_uniform)
-        logger.info("FAIRNESS ─ overall JSD(target)=%.4f  max|Δ|=%.3f  within±5%%=%s  target=%s",
-                    jsd_target, max_abs_dev_target, within5_target, target_mix)
-        logger.info("FAIRNESS ─ per-slot priors: %s", slot_priors)
-        logger.info("FAIRNESS ─ per-slot JSD(uniform): %s  within±7%%=%s", slot_jsd_uniform, slots_within7_uniform)
-        logger.info("FAIRNESS ─ per-slot JSD(target):  %s  within±7%%=%s", slot_jsd_target, slots_within7_target)
-        logger.info("FAIRNESS ─ target-double attempts: %s", dict(self.target_double_counts))
-        logger.info("FAIRNESS ─ target-double success:  %s  rates=%s",
-                    dict(self.target_double_success), double_success_rate)
-        logger.info("FAIRNESS ─ missing-class counts:   %s", dict(self.missing_class_counts))
-        logger.info("FAIRNESS ─ composition histogram (#DEC,#NC,#INC): %s", dict(self.composition_counts))
+        self._logger.info("FAIRNESS - overall JSD(uniform)=%.4f  max_abs_dev=%.3f  within 5%%=%s",
+                          jsd_uniform, max_abs_dev_uniform, within5_uniform)
+        self._logger.info(
+            "FAIRNESS - overall JSD(target)=%.4f  max_abs_dev=%.3f  within 5%%=%s  target=%s",
+            jsd_target, max_abs_dev_target, within5_target, target_mix)
+        self._logger.info("FAIRNESS - per-slot priors: %s", slot_priors)
+        self._logger.info("FAIRNESS - per-slot JSD(uniform): %s  within 7%%=%s",
+                          slot_jsd_uniform, slots_within7_uniform)
+        self._logger.info("FAIRNESS - per-slot JSD(target):  %s  within 7%%=%s",
+                          slot_jsd_target, slots_within7_target)
+        self._logger.info("FAIRNESS - target-double attempts: %s", dict(self.target_double_counts))
+        self._logger.info("FAIRNESS - target-double success:  %s  rates=%s",
+                          dict(self.target_double_success), double_success_rate)
+        self._logger.info("FAIRNESS - missing-class counts:   %s", dict(self.missing_class_counts))
+        self._logger.info("FAIRNESS - composition histogram (#DEC,#NC,#INC): %s",
+                          dict(self.composition_counts))
 
         fairness_metrics = {
             "overall_jsd_from_uniform": jsd_uniform,
@@ -512,7 +547,7 @@ class MoveEffectTest(BaseTest):
         out = {
             "n_moves": self.n_moves,
             "micro_acc": micro_acc,
-            "macro_f1": macro_f1,
+            "macro_f1": macro,
             "kappa": kappa,
             "per_class_precision": per_class_precision,
             "per_class_recall": per_class_recall,
@@ -530,7 +565,15 @@ class MoveEffectTest(BaseTest):
             "num_samples": num_samples,
             "fairness_metrics": fairness_metrics,
         }
-        self.save(out)
-        logger.info("Move-Effect micro-accuracy: %.3f | macro-F1: %.3f", micro_acc, macro_f1)
-        logger.info("round-robin/double debt (couldn’t honor): %s", dict(self.class_debt))
-        logger.info("presented class totals: %s", dict(self.presented_counts))
+        return out
+
+    # ----- Reporting -----
+
+    def summary(self, payload: Dict[str, Any], records: List[ItemRecord]) -> None:
+        self._logger.info(
+            "Move-Effect micro-accuracy: %.3f | macro-F1: %.3f",
+            payload["micro_acc"], payload["macro_f1"],
+        )
+        self._logger.info(
+            "round-robin/double debt (could not honor): %s", dict(self.class_debt))
+        self._logger.info("presented class totals: %s", dict(self.presented_counts))

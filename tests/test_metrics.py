@@ -27,6 +27,20 @@ def inline_balanced_accuracy(tp, tn, fp, fn):
     return 0.5 * (tpr + tnr) if (pos or neg) else 0.0
 
 
+def inline_jsd(p, q):
+    keys = list(p.keys())
+    m = {k: 0.5 * (p[k] + q[k]) for k in keys}
+
+    def _kl(a, b):
+        s = 0.0
+        for k in keys:
+            if a[k] > 0 and b[k] > 0:
+                s += a[k] * math.log(a[k] / b[k], 2)
+        return s
+
+    return 0.5 * _kl(p, m) + 0.5 * _kl(q, m)
+
+
 def inline_per_class(confusion, tri):
     per_class_recall, per_class_precision, per_class_f1 = {}, {}, {}
     for cls in tri:
@@ -44,9 +58,7 @@ def inline_per_class(confusion, tri):
 
 @pytest.mark.parametrize("count,total", [(0, 0), (0, 5), (3, 5), (5, 5), (7, 3)])
 def test_safe_prop_matches_move_effect(count, total):
-    move_effect = pytest.importorskip("cube_bench.evaluations.move_effect")
-    original = move_effect.MoveEffectTest._safe_prop  # pylint: disable=protected-access
-    assert metrics.safe_prop(count, total) == original(count, total)
+    assert metrics.safe_prop(count, total) == ((count / total) if total else 0.0)
 
 
 @pytest.mark.parametrize("p,q", [
@@ -56,9 +68,7 @@ def test_safe_prop_matches_move_effect(count, total):
     ({"a": 0.7, "b": 0.2, "c": 0.1}, {"a": 0.25, "b": 0.25, "c": 0.5}),
 ])
 def test_jensen_shannon_matches_move_effect(p, q):
-    move_effect = pytest.importorskip("cube_bench.evaluations.move_effect")
-    original = move_effect.MoveEffectTest._jsd  # pylint: disable=protected-access
-    assert metrics.jensen_shannon(p, q) == original(p, q)
+    assert metrics.jensen_shannon(p, q) == inline_jsd(p, q)
 
 
 @pytest.mark.parametrize("tp,tn,fp,fn", [
