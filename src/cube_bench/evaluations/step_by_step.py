@@ -747,24 +747,8 @@ class StepByStepTest(BaseTest):
         t2_total = sum(self._totals.per_step_totals[1:])
         t2_acc = (t2_correct / t2_total) if t2_total else 0.0
 
-        # Cycling: does the model re-pick moves / revisit states within an episode?
-        repeat_prev = repeat_any = revisited = 0
-        t2plus_decisions = 0
-        for s in all_sample_logs:
-            moves: List[str] = []
-            states: List[str] = []
-            for step in s["steps_data"]:
-                mv = step.get("chosen_move")
-                if mv is None:
-                    continue
-                st = step.get("cube_state")
-                if moves:
-                    t2plus_decisions += 1
-                    repeat_prev += int(mv == moves[-1])
-                    repeat_any += int(mv in moves)
-                    revisited += int(st in states)
-                moves.append(mv)
-                states.append(st)
+        repeat_prev, repeat_any, revisited, t2plus_decisions = self._cycling_stats(
+            all_sample_logs)
 
         return {
             "scoring": "oracle-optimal move from the state actually reached",
@@ -828,6 +812,27 @@ class StepByStepTest(BaseTest):
             },
             "samples": all_sample_logs,
         }
+
+    def _cycling_stats(self, sample_logs: List[Dict[str, Any]]):
+        """Count repeated moves and revisited states from step two onwards."""
+        repeat_prev = repeat_any = revisited = 0
+        t2plus_decisions = 0
+        for s in sample_logs:
+            moves: List[str] = []
+            states: List[str] = []
+            for step in s["steps_data"]:
+                mv = step.get("chosen_move")
+                if mv is None:
+                    continue
+                st = step.get("cube_state")
+                if moves:
+                    t2plus_decisions += 1
+                    repeat_prev += int(mv == moves[-1])
+                    repeat_any += int(mv in moves)
+                    revisited += int(st in states)
+                moves.append(mv)
+                states.append(st)
+        return repeat_prev, repeat_any, revisited, t2plus_decisions
 
     # ----- Reporting -----
 

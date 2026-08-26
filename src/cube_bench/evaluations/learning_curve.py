@@ -105,7 +105,41 @@ class LearningCurveTest(BaseTest):
 
         self._vlog(f"[sample {idx}] pre-phase start d={cube.get_distance()} scramble={list(scramble)}")
 
-        # Establish the first closed-loop failure.
+        plan, failure_happened, failure_reason = self._pre_phase(cube, plan, idx)
+
+        if not failure_happened or cube.is_solved():
+            self._vlog(
+                f"[sample {idx}] no eligible failure for learning-curve "
+                f"(failure={failure_happened}, reason={failure_reason}, "
+                f"solved={cube.is_solved()}); skipping LC episode"
+            )
+            return None
+
+        self._vlog(f"[sample {idx}] LC-phase start from failure={failure_reason} d_post={cube.get_distance()}")
+
+        attempts = self._recovery_phase(cube, plan, idx)
+
+        solved = cube.is_solved()
+        self._vlog(f"[sample {idx}] LC-phase done solved={solved} attempts={attempts}")
+
+        return ItemRecord(
+            index=idx,
+            correct=solved,
+            extra={
+                "attempts": attempts,
+                "solved": solved,
+                "failure_reason": failure_reason or "unknown",
+            },
+        )
+
+    def accumulate(self, record: ItemRecord) -> None:
+        self._episodes_with_failure += 1
+        self._pre_fail_reasons.append(record.extra["failure_reason"])
+        self._attempts_needed.append(record.extra["attempts"])
+        self._solved_flags.append(record.extra["solved"])
+
+    def _pre_phase(self, cube: VirtualCube, plan: Deque[str], idx: int):
+        """Run the closed loop until the model's first non-optimal move."""
         failure_happened = False
         failure_reason: Optional[str] = None
 
@@ -117,14 +151,14 @@ class LearningCurveTest(BaseTest):
                 if not plan:
                     self._vlog(f"[sample {idx}] pre-phase replan: empty; abort scramble")
                     failure_reason = "pre_replan_empty"
-                    break
+                    return plan, failure_happened, failure_reason
 
             good = self.optimal_first_moves(cube)
             correct_move = plan[0] if plan else None
             if not correct_move:
                 self._vlog(f"[sample {idx}] pre-phase plan head missing; abort scramble")
                 failure_reason = "pre_plan_missing"
-                break
+                return plan, failure_happened, failure_reason
 
             options, gold_letter = self.gen_mcq_from_good(good, rng)
             pred_letter, resp = self._ask_step(cube, options)
@@ -134,7 +168,7 @@ class LearningCurveTest(BaseTest):
                 self._vlog(f"[sample {idx}] pre-phase parse failure; pred_letter={pred_letter!r}, resp={resp!r}")
                 failure_happened = True
                 failure_reason = "parse_error"
-                break
+                return plan, failure_happened, failure_reason
 
             made_progress, d0, d1 = self.move_makes_progress(cube, predicted_move)
 
@@ -162,19 +196,12 @@ class LearningCurveTest(BaseTest):
             )
             failure_happened = True
             failure_reason = "non_progress"
-            break
+            return plan, failure_happened, failure_reason
 
-        if not failure_happened or cube.is_solved():
-            self._vlog(
-                f"[sample {idx}] no eligible failure for learning-curve "
-                f"(failure={failure_happened}, reason={failure_reason}, "
-                f"solved={cube.is_solved()}); skipping LC episode"
-            )
-            return None
+        return plan, failure_happened, failure_reason
 
-        self._vlog(f"[sample {idx}] LC-phase start from failure={failure_reason} d_post={cube.get_distance()}")
-
-        # Measure attempts from the post-error state.
+    def _recovery_phase(self, cube: VirtualCube, plan: Deque[str], idx: int) -> int:
+        """Count attempts from the post-error state until solved or out of budget."""
         attempts = 0
         while not cube.is_solved() and attempts < self.max_attempts:
             rng = self._sys_rng
@@ -183,7 +210,7 @@ class LearningCurveTest(BaseTest):
                 plan = self._replan(cube)
                 if not plan:
                     self._vlog(f"[sample {idx}] LC-phase replan: empty; abort LC episode")
-                    break
+                    return attempts
 
             good = self.optimal_first_moves(cube)
             correct_move = plan[0] if plan else None
@@ -227,24 +254,7 @@ class LearningCurveTest(BaseTest):
                 f"good={predicted_move in good} progress={made_progress} action={decision}"
             )
 
-        solved = cube.is_solved()
-        self._vlog(f"[sample {idx}] LC-phase done solved={solved} attempts={attempts}")
-
-        return ItemRecord(
-            index=idx,
-            correct=solved,
-            extra={
-                "attempts": attempts,
-                "solved": solved,
-                "failure_reason": failure_reason or "unknown",
-            },
-        )
-
-    def accumulate(self, record: ItemRecord) -> None:
-        self._episodes_with_failure += 1
-        self._pre_fail_reasons.append(record.extra["failure_reason"])
-        self._attempts_needed.append(record.extra["attempts"])
-        self._solved_flags.append(record.extra["solved"])
+        return attempts
 
     # ----- Aggregation -----
 

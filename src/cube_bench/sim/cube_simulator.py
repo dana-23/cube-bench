@@ -257,7 +257,7 @@ class VirtualCube:
         """Reset the cube to its solved state."""
         self._cube: pc.Cube = pc.Cube()
 
-    def to_kociemba(self, net: str | None = None) -> str:
+    def to_kociemba(self, net: str | None = None) -> str:  # pylint: disable=too-many-branches
         """Export URFDLB facelets, using current centres to support isomorphic recolours."""
         color_to_face = {
             str(self._cube.get_face(f)[1][1].colour).lower(): f
@@ -355,7 +355,8 @@ class VirtualCube:
         return str(temp)
 
     # Rendering
-    def render(self, *, cell_size: int = 60, sticker_border: int = 2, face_gap: int = 40,
+    def render(self, *, cell_size: int = 60, sticker_border: int = 2,  # pylint: disable=too-many-branches
+               face_gap: int = 40,
                return_type: str = "pil", file_path: Optional[Union[str, Path]] = None,
                dpi: int = 100, add_labels: bool = True):
         """Render the cube net as ``return_type``, optionally saving ``file_path``."""

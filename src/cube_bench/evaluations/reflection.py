@@ -470,10 +470,9 @@ class ReflectionTest(BaseTest):
 
     # ----- Aggregation -----
 
-    def _summarize(self, *, model_name, out_dir, acc_bits, all_indices, reflect_indices,
-                   reanswers, draft_source, n_draft_unparsed, extra_tokens, extra_latency_ms):
-        """Derive, log and persist the run summary."""
-        n_items = len(acc_bits)
+
+    def _paired_outcomes(self, acc_bits, all_indices, reanswers):
+        """Per-item correctness before and after reflecting, plus whether it parsed."""
         before = {i: int(acc_bits[i]) for i in all_indices}
         after: Dict[int, int] = {}
         parsed: Dict[int, bool] = {}
@@ -490,6 +489,13 @@ class ReflectionTest(BaseTest):
                     after[i] = before[i]
                     parsed[i] = True
 
+        return before, after, parsed
+
+    def _summarize(self, *, model_name, out_dir, acc_bits, all_indices, reflect_indices,
+                   reanswers, draft_source, n_draft_unparsed, extra_tokens, extra_latency_ms):
+        """Derive, log and persist the run summary."""
+        n_items = len(acc_bits)
+        before, after, parsed = self._paired_outcomes(acc_bits, all_indices, reanswers)
         n_reflected = len(reflect_indices)
         init_acc = sum(before.values()) / n_items if n_items else 0.0
         final_acc_all = (sum(after[i] for i in all_indices) / n_items) if self.reflect_all else float("nan")

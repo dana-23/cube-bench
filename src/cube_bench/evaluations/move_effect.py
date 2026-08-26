@@ -175,7 +175,7 @@ class MoveEffectTest(SingleAskTest):
         return assignment
 
     # Option sampling
-    def _balanced_sample_ABCD(
+    def _balanced_sample_ABCD(  # pylint: disable=too-many-branches,too-many-statements
         self, d: int, buckets: Dict[str, List[str]], rng: random.Random
     ) -> Tuple[Dict[str, str], Dict[str, int], str | None]:
         """Build A-D with one move per class plus a feasible doubled class when possible."""
@@ -466,6 +466,33 @@ class MoveEffectTest(SingleAskTest):
 
         per_distance_acc = {int(d): (v["correct"] / v["total"]) for d, v in per_distance.items() if v["total"]}
 
+        fairness_metrics = self._fairness_metrics(priors, tri)
+
+        out = {
+            "n_moves": self.n_moves,
+            "micro_acc": micro_acc,
+            "macro_f1": macro,
+            "kappa": kappa,
+            "per_class_precision": per_class_precision,
+            "per_class_recall": per_class_recall,
+            "per_class_f1": per_class_f1,
+            "labels_total": total_labels,
+            "confusion": {g: dict(c) for g, c in confusion.items()},
+            "support": dict(per_class),
+            "gold_priors": priors,
+            "pred_mix": q,
+            "expected_dot": model_expected,
+            "maj_baseline": maj_baseline,
+            "prior_sample_baseline": prior_sample_baseline,
+            "per_distance_micro_acc": per_distance_acc,
+            "option_coverage_counts": dict(option_mix_ok),
+            "num_samples": num_samples,
+            "fairness_metrics": fairness_metrics,
+        }
+        return out
+
+    def _fairness_metrics(self, priors: Dict[str, float], tri) -> Dict[str, Any]:
+        """Sampling-fairness diagnostics for the option mix actually presented."""
         uniform = {k: 1 / 3 for k in tri}
         jsd_uniform = jensen_shannon(priors, uniform)
         max_abs_dev_uniform = max(abs(priors[k] - 1 / 3) for k in tri) if tri else 0.0
@@ -522,7 +549,7 @@ class MoveEffectTest(SingleAskTest):
         self._logger.info("FAIRNESS - composition histogram (#DEC,#NC,#INC): %s",
                           dict(self.composition_counts))
 
-        fairness_metrics = {
+        return {
             "overall_jsd_from_uniform": jsd_uniform,
             "overall_max_abs_dev_uniform": max_abs_dev_uniform,
             "within5_uniform": within5_uniform,
@@ -544,28 +571,6 @@ class MoveEffectTest(SingleAskTest):
             "target_mix_overall": target_mix,
         }
 
-        out = {
-            "n_moves": self.n_moves,
-            "micro_acc": micro_acc,
-            "macro_f1": macro,
-            "kappa": kappa,
-            "per_class_precision": per_class_precision,
-            "per_class_recall": per_class_recall,
-            "per_class_f1": per_class_f1,
-            "labels_total": total_labels,
-            "confusion": {g: dict(c) for g, c in confusion.items()},
-            "support": dict(per_class),
-            "gold_priors": priors,
-            "pred_mix": q,
-            "expected_dot": model_expected,
-            "maj_baseline": maj_baseline,
-            "prior_sample_baseline": prior_sample_baseline,
-            "per_distance_micro_acc": per_distance_acc,
-            "option_coverage_counts": dict(option_mix_ok),
-            "num_samples": num_samples,
-            "fairness_metrics": fairness_metrics,
-        }
-        return out
 
     # ----- Reporting -----
 

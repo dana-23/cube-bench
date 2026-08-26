@@ -47,7 +47,9 @@ testpaths = ["tests"]
 [tool.pylint.main]
 # Keep the vendored Kociemba solver diffable with upstream; fix defects manually
 # without applying project-wide style rules.
-ignore-paths = ['^src/cube_bench/optimal/(?!__init__\.py).*$']
+# The vendored Kociemba solver stays diffable with upstream; build/ is a stale
+# copy of the package that shadows src/ during a recursive run.
+ignore-paths = ['^src/cube_bench/optimal/(?!__init__\.py).*$', '^build/.*$']
 jobs = 0
 
 [tool.pylint.format]
@@ -84,6 +86,9 @@ max-args = 16
 max-positional-arguments = 6
 max-attributes = 20
 max-returns = 13
+# Metric aggregation names one local per statistic; this ratchets the current
+# worst case rather than inviting new growth.
+max-locals = 34
 min-public-methods = 1
 # BaseTest exposes the run-template hooks plus the shared cube and MCQ helpers.
 max-public-methods = 32
@@ -95,10 +100,5 @@ disable = [
   "broad-exception-caught",
   # Heavy optional dependencies are imported only inside their strategies.
   "import-outside-toplevel",
-  # Evaluation run methods are intentionally linear pipelines; re-enable size
-  # checks if those pipelines are refactored.
-  "too-many-locals",
-  "too-many-statements",
-  "too-many-branches",
   "too-many-lines",
 ]

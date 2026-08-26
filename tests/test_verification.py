@@ -13,6 +13,11 @@ verification = pytest.importorskip("cube_bench.evaluations.verification")
 VerificationTest = verification.VerificationTest
 
 
+def front_affecting_moves():
+    """The move pool mismatched items are drawn from."""
+    return VerificationTest._FRONT_AFFECTING  # pylint: disable=protected-access
+
+
 class StubCube:
     """Cube stand-in: tracks the applied move so mismatches stay observable."""
 
@@ -20,7 +25,8 @@ class StubCube:
         self.seed = seed
         self.applied = list(applied or [])
 
-    def scramble(self, random_seed, n_moves, exact_depth):  # noqa: ARG002
+    def scramble(self, random_seed, n_moves, exact_depth):
+        del n_moves, exact_depth
         self.seed = random_seed
         return f"scramble-{random_seed}"
 
@@ -40,9 +46,7 @@ class StubCube:
 @pytest.fixture(name="task")
 def fixture_task(monkeypatch):
     monkeypatch.setattr(verification, "VirtualCube", StubCube)
-    task = VerificationTest.__new__(VerificationTest)
-    VerificationTest.__init__(task, assistant=None, config=None, n_moves=5)
-    return task
+    return VerificationTest(assistant=None, config=None, n_moves=5)
 
 
 def _samples(task, n):
@@ -92,7 +96,7 @@ def test_mismatched_items_apply_a_front_affecting_move(task):
         if sample["states_match"]:
             assert sample["mismatch_move"] is None
         else:
-            assert sample["mismatch_move"] in VerificationTest._FRONT_AFFECTING
+            assert sample["mismatch_move"] in front_affecting_moves()
 
 
 def test_claim_text_carries_the_front_face_and_matches_its_polarity(task):
@@ -110,8 +114,7 @@ def test_items_are_identical_across_instances(monkeypatch):
     monkeypatch.setattr(verification, "VirtualCube", StubCube)
 
     def build(idx):
-        task = VerificationTest.__new__(VerificationTest)
-        VerificationTest.__init__(task, assistant=None, config=None, n_moves=5)
+        task = VerificationTest(assistant=None, config=None, n_moves=5)
         return task.build_item(idx)
 
     for idx in range(12):
@@ -125,8 +128,7 @@ def test_depth_changes_the_mismatch_draw(monkeypatch):
     monkeypatch.setattr(verification, "VirtualCube", StubCube)
 
     def moves_at_depth(depth):
-        task = VerificationTest.__new__(VerificationTest)
-        VerificationTest.__init__(task, assistant=None, config=None, n_moves=depth)
+        task = VerificationTest(assistant=None, config=None, n_moves=depth)
         return [
             task.build_item(i)["mismatch_move"]
             for i in range(1, 40, 2)
