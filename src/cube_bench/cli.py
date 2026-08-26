@@ -19,7 +19,6 @@ ALL_TESTS = [
     "step_by_step",
     "learning_curve",
     "move_effect",
-    "invariance_sweep",
     "reflection",
 ]
 

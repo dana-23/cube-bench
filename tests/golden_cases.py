@@ -56,10 +56,6 @@ def _move_effect(n_moves: int):
     return build
 
 
-def _invariance_sweep(assistant, config, _tmp):
-    return evaluations.InvarianceSweepTest(assistant, config, n_moves=3)
-
-
 def _learning_curve(assistant, config, _tmp):
     task = evaluations.LearningCurveTest(assistant, config, n_moves=3, max_attempts=6)
     task._sys_rng = random.Random(SEED)  # pylint: disable=protected-access
@@ -96,7 +92,6 @@ CASES: tuple[Case, ...] = (
     Case("move_effect_d1", _move_effect(1), 8),
     Case("move_effect_d2", _move_effect(2), 8),
     Case("move_effect_d3", _move_effect(3), 8),
-    Case("invariance_sweep_d3", _invariance_sweep, 6),
     Case("learning_curve_d3", _learning_curve, 6),
     Case("step_by_step_markov_d3", _step_by_step(), 8),
     Case("step_by_step_history_d3", _step_by_step(history_enabled=True), 8),

@@ -11,7 +11,6 @@ from omegaconf import DictConfig
 
 from cube_bench.config import Config
 from cube_bench.evaluations import (
-    InvarianceSweepTest,
     LearningCurveTest,
     MoveEffectTest,
     ReconstructionTest,
@@ -94,15 +93,6 @@ class TestOrchestrator:
         elif name == "move-effect":
             test = MoveEffectTest(
                 self.assistant, self.config,
-                **common,
-            )
-
-        elif name == "invariance-sweep":
-            test = InvarianceSweepTest(
-                self.assistant, self.config,
-                balance_gold_letters=test_cfg.balance_gold_letters,
-                add_labels=test_cfg.add_labels,
-                max_new_tokens=test_cfg.max_new_tokens,
                 **common,
             )
 
