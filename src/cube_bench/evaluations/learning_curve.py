@@ -6,7 +6,7 @@ import logging
 import random
 import statistics
 from collections import Counter, deque
-from typing import Deque, List, Optional
+from typing import Any, Deque, Dict, List, Optional
 
 import matplotlib
 
@@ -14,9 +14,8 @@ matplotlib.use("Agg")  # headless-safe; must precede any pyplot import
 
 # pylint: disable=wrong-import-position
 from matplotlib import pyplot as plt
-from tqdm import tqdm
 
-from cube_bench.core import BaseTest
+from cube_bench.core import ItemRecord, BaseTest
 from cube_bench.prompts.prompt_factory import PromptFactory
 from cube_bench.sim.cube_simulator import VirtualCube
 # pylint: enable=wrong-import-position
@@ -44,9 +43,26 @@ class LearningCurveTest(BaseTest):
         self.accept_progress = bool(accept_progress)
         self._sys_rng: random.Random = random.SystemRandom()
 
-    def _vlog(self, *a: object) -> None:
-        if self.verbose:
-            logger.info(" ".join(str(x) for x in a))
+        self._attempts_needed: List[int] = []
+        self._solved_flags: List[bool] = []
+        self._pre_fail_reasons: List[str] = []
+        self._total_scrambles = 0
+        self._episodes_with_failure = 0
+
+    def desc(self) -> str:
+        return f"Learning-curve ({self.n_moves} moves)"
+
+    def setup(self, num_samples: int) -> None:
+        self._attempts_needed = []
+        self._solved_flags = []
+        self._pre_fail_reasons = []
+        self._total_scrambles = 0
+        self._episodes_with_failure = 0
+        self._vlog(
+            f"[start] test={self.test_type} model={self.assistant.get_name()} "
+            f"samples={num_samples} depth={self.n_moves} max_attempts={self.max_attempts} "
+            f"accept_progress={self.accept_progress}"
+        )
 
     def _replan(self, vc: VirtualCube) -> Deque[str]:
         if vc.is_solved():
@@ -79,156 +95,165 @@ class LearningCurveTest(BaseTest):
         )
         return self.parse_letter(resp), resp
 
-    def run(self, num_samples: int) -> None:
-        attempts_needed: List[int] = []
-        solved_flags: List[bool] = []
-        pre_fail_reasons: List[str] = []
+    # ----- Episode -----
 
-        total_scrambles = 0
-        episodes_with_failure = 0
+    def run_item(self, idx: int) -> Optional[ItemRecord]:
+        self._total_scrambles += 1
+        cube = VirtualCube()
+        scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves, exact_depth=True)
+        plan: Deque[str] = deque(self.teacher_path(scramble))
 
-        self._vlog(
-            f"[start] test={self.test_type} model={self.assistant.get_name()} "
-            f"samples={num_samples} depth={self.n_moves} max_attempts={self.max_attempts} "
-            f"accept_progress={self.accept_progress}"
-        )
+        self._vlog(f"[sample {idx}] pre-phase start d={cube.get_distance()} scramble={list(scramble)}")
 
-        for idx in tqdm(range(num_samples), desc=f"Learning-curve ({self.n_moves} moves)"):
-            total_scrambles += 1
-            cube = VirtualCube()
-            scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves, exact_depth=True)
-            plan: Deque[str] = deque(self.teacher_path(scramble))
+        # Establish the first closed-loop failure.
+        failure_happened = False
+        failure_reason: Optional[str] = None
 
-            self._vlog(f"[sample {idx}] pre-phase start d={cube.get_distance()} scramble={list(scramble)}")
+        while not cube.is_solved():
+            rng = self._sys_rng
 
-            # Establish the first closed-loop failure.
-            failure_happened = False
-            failure_reason: Optional[str] = None
-
-            while not cube.is_solved():
-                rng = self._sys_rng
-
+            if not plan:
+                plan = self._replan(cube)
                 if not plan:
-                    plan = self._replan(cube)
-                    if not plan:
-                        self._vlog(f"[sample {idx}] pre-phase replan: empty; abort scramble")
-                        failure_reason = "pre_replan_empty"
-                        break
-
-                good = self.optimal_first_moves(cube)
-                correct_move = plan[0] if plan else None
-                if not correct_move:
-                    self._vlog(f"[sample {idx}] pre-phase plan head missing; abort scramble")
-                    failure_reason = "pre_plan_missing"
+                    self._vlog(f"[sample {idx}] pre-phase replan: empty; abort scramble")
+                    failure_reason = "pre_replan_empty"
                     break
 
-                options, gold_letter = self.gen_mcq_from_good(good, rng)
-                pred_letter, resp = self._ask_step(cube, options)
-                predicted_move = options.get(pred_letter) if pred_letter else None
-
-                if not predicted_move:
-                    self._vlog(f"[sample {idx}] pre-phase parse failure; pred_letter={pred_letter!r}, resp={resp!r}")
-                    failure_happened = True
-                    failure_reason = "parse_error"
-                    break
-
-                made_progress, d0, d1 = self.move_makes_progress(cube, predicted_move)
-
-                if predicted_move in good:
-                    if predicted_move == correct_move:
-                        cube.apply(predicted_move)
-                        plan.popleft()
-                        decision = "APPLY_MATCH(pre)"
-                    else:
-                        cube.apply(predicted_move)
-                        plan = self._replan(cube)
-                        decision = "APPLY_DECREASE(pre_replan)"
-                    self._vlog(
-                        f"[sample {idx}] pre-phase d:{d0}->{d1} pred={predicted_move} gold={gold_letter} "
-                        f"correct={correct_move} good=True progress={made_progress} action={decision}"
-                    )
-                    continue
-
-                cube.apply(predicted_move)
-                plan.appendleft(self.inverse_move(predicted_move))
-                self._vlog(
-                    f"[sample {idx}] pre-phase FAILURE d:{d0}->{d1} pred={predicted_move} "
-                    f"gold={gold_letter} correct={correct_move} good=False progress={made_progress} "
-                    f"action=APPLY_WITH_INVERSE(pre_error)"
-                )
-                failure_happened = True
-                failure_reason = "non_progress"
+            good = self.optimal_first_moves(cube)
+            correct_move = plan[0] if plan else None
+            if not correct_move:
+                self._vlog(f"[sample {idx}] pre-phase plan head missing; abort scramble")
+                failure_reason = "pre_plan_missing"
                 break
 
-            if not failure_happened or cube.is_solved():
-                self._vlog(
-                    f"[sample {idx}] no eligible failure for learning-curve "
-                    f"(failure={failure_happened}, reason={failure_reason}, "
-                    f"solved={cube.is_solved()}); skipping LC episode"
-                )
-                continue
+            options, gold_letter = self.gen_mcq_from_good(good, rng)
+            pred_letter, resp = self._ask_step(cube, options)
+            predicted_move = options.get(pred_letter) if pred_letter else None
 
-            episodes_with_failure += 1
-            pre_fail_reasons.append(failure_reason or "unknown")
-            self._vlog(f"[sample {idx}] LC-phase start from failure={failure_reason} d_post={cube.get_distance()}")
+            if not predicted_move:
+                self._vlog(f"[sample {idx}] pre-phase parse failure; pred_letter={pred_letter!r}, resp={resp!r}")
+                failure_happened = True
+                failure_reason = "parse_error"
+                break
 
-            # Measure attempts from the post-error state.
-            attempts = 0
-            while not cube.is_solved() and attempts < self.max_attempts:
-                rng = self._sys_rng
+            made_progress, d0, d1 = self.move_makes_progress(cube, predicted_move)
 
-                if not plan:
-                    plan = self._replan(cube)
-                    if not plan:
-                        self._vlog(f"[sample {idx}] LC-phase replan: empty; abort LC episode")
-                        break
-
-                good = self.optimal_first_moves(cube)
-                correct_move = plan[0] if plan else None
-                if not correct_move:
-                    self._vlog(f"[sample {idx}] LC-phase plan head missing; abort LC episode")
-                    break
-
-                options, gold_letter = self.gen_mcq_from_good(good, rng)
-                pred_letter, resp = self._ask_step(cube, options)
-                predicted_move = options.get(pred_letter) if pred_letter else None
-
-                if not predicted_move:
-                    attempts += 1
-                    logger.warning(
-                        "[sample %s] LC-phase parse failure; pred_letter=%r, resp=%r",
-                        idx,
-                        pred_letter,
-                        resp,
-                    )
-                    continue
-
-                attempts += 1
-                made_progress, d0, d1 = self.move_makes_progress(cube, predicted_move)
-
+            if predicted_move in good:
                 if predicted_move == correct_move:
                     cube.apply(predicted_move)
                     plan.popleft()
-                    decision = "APPLY_MATCH(LC)"
-                elif predicted_move in good:
-                    cube.apply(predicted_move)
-                    plan = self._replan(cube)
-                    decision = "APPLY_DECREASE(LC_replan)"
+                    decision = "APPLY_MATCH(pre)"
                 else:
                     cube.apply(predicted_move)
-                    plan.appendleft(self.inverse_move(predicted_move))
-                    decision = "APPLY_WITH_INVERSE(LC)"
-
+                    plan = self._replan(cube)
+                    decision = "APPLY_DECREASE(pre_replan)"
                 self._vlog(
-                    f"[sample {idx}] LC-phase attempt={attempts} d:{d0}->{d1} "
-                    f"pred={predicted_move} gold={gold_letter} correct={correct_move} "
-                    f"good={predicted_move in good} progress={made_progress} action={decision}"
+                    f"[sample {idx}] pre-phase d:{d0}->{d1} pred={predicted_move} gold={gold_letter} "
+                    f"correct={correct_move} good=True progress={made_progress} action={decision}"
                 )
+                continue
 
-            attempts_needed.append(attempts)
-            solved = cube.is_solved()
-            solved_flags.append(solved)
-            self._vlog(f"[sample {idx}] LC-phase done solved={solved} attempts={attempts}")
+            cube.apply(predicted_move)
+            plan.appendleft(self.inverse_move(predicted_move))
+            self._vlog(
+                f"[sample {idx}] pre-phase FAILURE d:{d0}->{d1} pred={predicted_move} "
+                f"gold={gold_letter} correct={correct_move} good=False progress={made_progress} "
+                f"action=APPLY_WITH_INVERSE(pre_error)"
+            )
+            failure_happened = True
+            failure_reason = "non_progress"
+            break
+
+        if not failure_happened or cube.is_solved():
+            self._vlog(
+                f"[sample {idx}] no eligible failure for learning-curve "
+                f"(failure={failure_happened}, reason={failure_reason}, "
+                f"solved={cube.is_solved()}); skipping LC episode"
+            )
+            return None
+
+        self._vlog(f"[sample {idx}] LC-phase start from failure={failure_reason} d_post={cube.get_distance()}")
+
+        # Measure attempts from the post-error state.
+        attempts = 0
+        while not cube.is_solved() and attempts < self.max_attempts:
+            rng = self._sys_rng
+
+            if not plan:
+                plan = self._replan(cube)
+                if not plan:
+                    self._vlog(f"[sample {idx}] LC-phase replan: empty; abort LC episode")
+                    break
+
+            good = self.optimal_first_moves(cube)
+            correct_move = plan[0] if plan else None
+            if not correct_move:
+                self._vlog(f"[sample {idx}] LC-phase plan head missing; abort LC episode")
+                break
+
+            options, gold_letter = self.gen_mcq_from_good(good, rng)
+            pred_letter, resp = self._ask_step(cube, options)
+            predicted_move = options.get(pred_letter) if pred_letter else None
+
+            if not predicted_move:
+                attempts += 1
+                logger.warning(
+                    "[sample %s] LC-phase parse failure; pred_letter=%r, resp=%r",
+                    idx,
+                    pred_letter,
+                    resp,
+                )
+                continue
+
+            attempts += 1
+            made_progress, d0, d1 = self.move_makes_progress(cube, predicted_move)
+
+            if predicted_move == correct_move:
+                cube.apply(predicted_move)
+                plan.popleft()
+                decision = "APPLY_MATCH(LC)"
+            elif predicted_move in good:
+                cube.apply(predicted_move)
+                plan = self._replan(cube)
+                decision = "APPLY_DECREASE(LC_replan)"
+            else:
+                cube.apply(predicted_move)
+                plan.appendleft(self.inverse_move(predicted_move))
+                decision = "APPLY_WITH_INVERSE(LC)"
+
+            self._vlog(
+                f"[sample {idx}] LC-phase attempt={attempts} d:{d0}->{d1} "
+                f"pred={predicted_move} gold={gold_letter} correct={correct_move} "
+                f"good={predicted_move in good} progress={made_progress} action={decision}"
+            )
+
+        solved = cube.is_solved()
+        self._vlog(f"[sample {idx}] LC-phase done solved={solved} attempts={attempts}")
+
+        return ItemRecord(
+            index=idx,
+            correct=solved,
+            extra={
+                "attempts": attempts,
+                "solved": solved,
+                "failure_reason": failure_reason or "unknown",
+            },
+        )
+
+    def accumulate(self, record: ItemRecord) -> None:
+        self._episodes_with_failure += 1
+        self._pre_fail_reasons.append(record.extra["failure_reason"])
+        self._attempts_needed.append(record.extra["attempts"])
+        self._solved_flags.append(record.extra["solved"])
+
+    # ----- Aggregation -----
+
+    def aggregate(self, records: List[ItemRecord], num_samples: int) -> Dict[str, Any]:
+        attempts_needed = self._attempts_needed
+        solved_flags = self._solved_flags
+        pre_fail_reasons = self._pre_fail_reasons
+        total_scrambles = self._total_scrambles
+        episodes_with_failure = self._episodes_with_failure
 
         # Aggregate only episodes that reached the post-error phase.
         n = len(attempts_needed)
@@ -261,26 +286,9 @@ class LearningCurveTest(BaseTest):
             ) / n
             avg_attempts_all = sum(attempts_needed) / n
 
-        fig_path = self.config.results_dir / self.HIST_FIG_NAME
-        fig_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            plt.figure(figsize=(8, 5))
-            plt.bar(xs, ys)
-            plt.xticks(xs)
-            plt.xlabel("Attempts (when solved)")
-            plt.ylabel("Number of post-error episodes")
-            unsolved_n = int(n - solved_n)
-            plt.title(
-                f"Solve Attempts Distribution (post-error; N={n}, "
-                f"Solved={solved_n}, Unsolved={unsolved_n}, SR={success_rate:.2%})"
-            )
-            plt.grid(axis="y", alpha=0.3)
-            plt.tight_layout()
-            plt.savefig(fig_path, dpi=160)
-        finally:
-            plt.close()
+        fig_path = self._write_histogram(xs, ys, n, solved_n, success_rate)
 
-        self.save({
+        return {
             "n_moves": self.n_moves,
             "max_attempts": self.max_attempts,
             "accept_progress": self.accept_progress,
@@ -300,12 +308,41 @@ class LearningCurveTest(BaseTest):
             "avg_attempts_all": avg_attempts_all,
             "hist_counts": {int(k): int(v) for k, v in counts.items()},
             "plot_path": str(fig_path),
-        })
+        }
 
+    def _write_histogram(self, xs, ys, n, solved_n, success_rate):
+        """Render the attempts histogram and return the path it was written to."""
+        fig_path = self.config.results_dir / self.HIST_FIG_NAME
+        fig_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            plt.figure(figsize=(8, 5))
+            plt.bar(xs, ys)
+            plt.xticks(xs)
+            plt.xlabel("Attempts (when solved)")
+            plt.ylabel("Number of post-error episodes")
+            unsolved_n = int(n - solved_n)
+            plt.title(
+                f"Solve Attempts Distribution (post-error; N={n}, "
+                f"Solved={solved_n}, Unsolved={unsolved_n}, SR={success_rate:.2%})"
+            )
+            plt.grid(axis="y", alpha=0.3)
+            plt.tight_layout()
+            plt.savefig(fig_path, dpi=160)
+        finally:
+            plt.close()
+        return fig_path
+
+    # ----- Reporting -----
+
+    def summary(self, payload: Dict[str, Any], records: List[ItemRecord]) -> None:
+        ci_lo, ci_hi = payload["sr_ci95"]
+        med = payload["med_at_solved"]
         self._vlog(
-            f"[end] total_scrambles={total_scrambles} episodes_with_failure={episodes_with_failure} "
-            f"SR={success_rate:.2%} CI95=({ci_lo:.3f},{ci_hi:.3f}) P(1)={p1:.3f} P(≤3)={p_le_3:.3f} "
-            f"Med@Solved={med_at_solved if med_at_solved is not None else 'NA'} "
-            f"Avg@All={avg_attempts_all_maxed:.2f} "
-            f"plot={fig_path}"
+            f"[end] total_scrambles={payload['total_scrambles']} "
+            f"episodes_with_failure={payload['episodes_with_failure']} "
+            f"SR={payload['success_rate']:.2%} CI95=({ci_lo:.3f},{ci_hi:.3f}) "
+            f"P(1)={payload['p1']:.3f} P(<=3)={payload['p_le_3']:.3f} "
+            f"Med@Solved={med if med is not None else 'NA'} "
+            f"Avg@All={payload['avg_attempts_all_maxed']:.2f} "
+            f"plot={payload['plot_path']}"
         )
