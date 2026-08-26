@@ -93,6 +93,8 @@ max-positional-arguments = 6
 max-attributes = 20
 max-returns = 13
 min-public-methods = 1
+# BaseTest exposes the run-template hooks plus the shared cube and MCQ helpers.
+max-public-methods = 32
 
 [tool.pylint."messages control"]
 disable = [

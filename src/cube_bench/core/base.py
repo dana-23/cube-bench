@@ -7,7 +7,7 @@ import logging
 import random
 import re
 import time
-from abc import ABC, abstractmethod
+from abc import ABC
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +16,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from ..config import Config
 from ..io import save_results
 from . import metrics
+from .records import ItemRecord
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +42,86 @@ class BaseTest(ABC):
         self.n_moves = int(n_moves)
         self.verbose = bool(verbose)
         self.latencies: List[float] = []
+        self._logger = logging.getLogger(type(self).__module__)
 
-    @abstractmethod
+    # ----- Run template -----
+
     def run(self, num_samples: int):
         """Run the evaluation over *num_samples* generated items."""
+        self.setup(num_samples)
+        records = self.collect(num_samples)
+        payload = self.aggregate(records, num_samples)
+        self.summary(payload, records)
+        self.persist(payload, records)
+        return self.result(payload, records)
+
+    def collect(self, num_samples: int) -> List[ItemRecord]:
+        """Run every item in order, keeping the records aggregation needs."""
+        records: List[ItemRecord] = []
+        for idx in self.progress(self.iter_indices(num_samples)):
+            record = self.run_item(idx)
+            if record is None:
+                continue
+            self.accumulate(record)
+            records.append(record)
+        return records
+
+    # ----- Loop seams -----
+
+    def iter_indices(self, num_samples: int) -> Iterable[int]:
+        """The item indices to run, in order."""
+        return range(num_samples)
+
+    def progress(self, indices: Iterable[int], total: Optional[int] = None) -> Iterable[int]:
+        """Wrap *indices* in this evaluation's progress bar."""
+        from tqdm import tqdm
+        return tqdm(indices, total=total, desc=self.desc())
+
+    def desc(self) -> str:
+        """The progress-bar label."""
+        return self.test_type
+
+    # ----- Hooks -----
+
+    def setup(self, num_samples: int) -> None:
+        """Prepare state that outlives a single item."""
+
+    def run_item(self, idx: int) -> Optional[ItemRecord]:
+        """Produce one scored record, or None to skip the item."""
+        raise NotImplementedError
+
+    def accumulate(self, record: ItemRecord) -> None:
+        """Fold *record* into running per-test state."""
+
+    def aggregate(self, records: List[ItemRecord], num_samples: int) -> Dict[str, Any]:
+        """Derive the payload that gets saved."""
+        raise NotImplementedError
+
+    def summary(  # pylint: disable=unused-argument
+        self, payload: Dict[str, Any], records: List[ItemRecord]
+    ) -> None:
+        """Log the run; never compute a saved value here."""
+
+    def persist(  # pylint: disable=unused-argument
+        self, payload: Dict[str, Any], records: List[ItemRecord]
+    ) -> Any:
+        """Write the payload to disk."""
+        return self.save(payload, self.result_filename())
+
+    def result_filename(self) -> Optional[str]:
+        """Override when the file name is not ``<test_type>.json``."""
+        return None
+
+    def result(  # pylint: disable=unused-argument
+        self, payload: Dict[str, Any], records: List[ItemRecord]
+    ) -> Any:
+        """What ``run`` returns to its caller."""
+        return None
+
+    def _vlog(self, fmt: str, *args: Any) -> None:
+        """Log at info level only while the run is verbose."""
+        if self.verbose:
+            self._logger.info(fmt, *args)
 
     # ----- MCQ answer parsing -----
 
@@ -298,3 +375,52 @@ class BaseTest(ABC):
         out_path = Path(self.config.results_dir) / (filename or f"{self.test_type}.json")
         save_results(out_path, payload)
         return out_path
+
+
+class SingleAskTest(BaseTest):
+    """An evaluation whose every item is one prompt and one reply."""
+
+    def run_item(self, idx: int) -> Optional[ItemRecord]:
+        """Build, prompt, ask, parse and score item *idx*."""
+        item = self.build_item(idx)
+        if item is None:
+            return None
+        system_prompt, user_prompt = self.build_prompts(item)
+        response = self.ask_item(item, system_prompt, user_prompt)
+        return self.score_item(item, self.parse(response), response)
+
+    # ----- Item generation -----
+
+    def build_item(self, idx: int) -> Optional[Dict[str, Any]]:
+        """Generate item *idx*, or None to skip it."""
+        raise NotImplementedError
+
+    # ----- Prompting -----
+
+    def build_prompts(self, item: Dict[str, Any]) -> Tuple[str, str]:
+        """The (system, user) prompt pair for *item*."""
+        raise NotImplementedError
+
+    def ask_kwargs(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        """Generation arguments for *item*."""
+        return {"image": item.get("image")}
+
+    def ask_item(self, item: Dict[str, Any], system_prompt: str, user_prompt: str) -> str:
+        """Send one item to the model."""
+        return self.ask(
+            user_prompt=user_prompt, system_prompt=system_prompt, **self.ask_kwargs(item)
+        )
+
+    # ----- Parsing -----
+
+    def parse(self, response: Optional[str]) -> Any:
+        """Extract this evaluation's answer from *response*."""
+        return self.parse_letter(response)
+
+    # ----- Scoring -----
+
+    def score_item(
+        self, item: Dict[str, Any], prediction: Any, response: Optional[str]
+    ) -> ItemRecord:
+        """Score one parsed answer."""
+        raise NotImplementedError
