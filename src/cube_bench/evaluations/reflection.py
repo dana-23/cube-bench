@@ -145,6 +145,8 @@ class ReflectionTest(BaseTest):
 
     test_type = "reflection"
 
+    # ----- Construction -----
+
     def __init__(
         self,
         assistant,
@@ -206,6 +208,8 @@ class ReflectionTest(BaseTest):
             if len(out) >= 2 and isinstance(out[1], dict):
                 usage = out[1]
         return text, usage, dt_ms
+
+    # ----- Run -----
 
     def run(self, num_samples: int) -> Dict[str, Any]:
         """Run the draft, reflection and re-answer passes.

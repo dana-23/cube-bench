@@ -26,6 +26,8 @@ class MoveEffectTest(SingleAskTest):
     SLOTS = "ABCD"
     test_type = "move_effect"
 
+    # ----- Construction -----
+
     def __init__(self, assistant, config, n_moves: int = 2, verbose: bool = False):
         super().__init__(assistant, config, n_moves, verbose)
 
@@ -74,7 +76,6 @@ class MoveEffectTest(SingleAskTest):
         )
         self._logger.info("=" * 80)
 
-    # Neighbor labels
     def _label_all_neighbors(self, vc: VirtualCube) -> Tuple[Dict[str, List[str]], Dict[str, str]]:
         buckets: Dict[str, List[str]] = {"DECREASE": [], "NO_CHANGE": [], "INCREASE": []}
         labels_by_move: Dict[str, str] = {}
@@ -96,7 +97,6 @@ class MoveEffectTest(SingleAskTest):
 
         return buckets, labels_by_move
 
-    # Fairness metrics
     def _feasible_target_for_depth(self, d: int) -> Dict[str, float]:
         """Allocate the fourth option by each class's smoothed feasibility at depth ``d``."""
         items = self.depth_item_count[d]
@@ -123,7 +123,6 @@ class MoveEffectTest(SingleAskTest):
         s = sum(mix.values()) or 1.0
         return {k: v / s for k, v in mix.items()}
 
-    # Target selection
     def _pick_target_double(self, d: int, buckets: Dict[str, List[str]]) -> str | None:
         """Double the most underrepresented feasible class at depth ``d``."""
         feasible = [c for c in self.CLASSES if len(buckets.get(c, [])) >= 2]
@@ -148,7 +147,6 @@ class MoveEffectTest(SingleAskTest):
 
         return feasible[self.double_idx % len(feasible)]
 
-    # Slot assignment
     def _assign_with_double_slot(self, picked: List[Tuple[str, str]], double_cls: str | None) -> Dict[str, str]:
         """Rotate the doubled class across slots, then balance the remaining assignments."""
         slots = list(self.SLOTS)
@@ -174,7 +172,6 @@ class MoveEffectTest(SingleAskTest):
 
         return assignment
 
-    # Option sampling
     def _balanced_sample_ABCD(  # pylint: disable=too-many-branches,too-many-statements
         self, d: int, buckets: Dict[str, List[str]], rng: random.Random
     ) -> Tuple[Dict[str, str], Dict[str, int], str | None]:
@@ -275,7 +272,6 @@ class MoveEffectTest(SingleAskTest):
 
         return options, actual_counts, doubled_class
 
-    # Prompts
     def _face_centers(self, cube: VirtualCube) -> Dict[str, str]:
         return {
             "U_color": str(cube.raw.get_face("U")[1][1].colour),

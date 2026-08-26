@@ -29,6 +29,8 @@ class LearningCurveTest(BaseTest):
     test_type = "learning_curve"
     HIST_FIG_NAME = "learning_curve_hist.png"
 
+    # ----- Construction -----
+
     def __init__(
         self,
         assistant,

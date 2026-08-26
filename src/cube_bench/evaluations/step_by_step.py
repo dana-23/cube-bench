@@ -104,6 +104,8 @@ class StepByStepTest(BaseTest):
 
     test_type = "step_by_step"
 
+    # ----- Construction -----
+
     def __init__(  # pylint: disable=unused-argument  # idk_conf_threshold is pinned below
         self,
         assistant,
