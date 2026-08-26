@@ -1,0 +1,144 @@
+===== call 0 system =====
+You are an expert Rubik's-Cube solver. Pick exactly ONE move (A, B, C, D or IDK) that most reduces the cube's distance to solved.
+
+Context
+- The cube is 3 moves from solved under God's distance (HTM).
+- You will receive a textual cube state (ground truth) and an image (reference only). Use the TEXT ONLY to decide.
+
+Decision rule (deterministic)
+1) For each candidate, internally simulate that move on the textual state and estimate the resulting distance d1 (HTM).
+2) If any candidate solves the cube (d1=0), choose that candidate.
+3) Otherwise choose the candidate with the lowest d1.
+4) If there is a tie on d1, break ties by letter: A ≺ B ≺ C ≺ D.
+5) If you are <50% confident, abstain with IDK.
+
+Output format (STRICT)
+Return exactly one of the following on a single line:
+<ANSWER> A </ANSWER>
+<ANSWER> B </ANSWER>
+<ANSWER> C </ANSWER>
+<ANSWER> D </ANSWER>
+<ANSWER> IDK </ANSWER>
+
+No explanations, no extra text.
+
+===== call 0 user =====
+The cube is 3 moves away from being solved.
+
+Textual Cube State (ground truth):
+         [r][y][y]
+         [r][y][y]
+         [o][y][y]
+[b][b][g][w][r][r][g][g][g][o][o][y]
+[w][r][r][g][g][g][o][o][y][b][b][g]
+[w][o][o][b][b][b][r][r][y][b][b][g]
+         [w][w][w]
+         [w][w][w]
+         [r][o][o]
+
+
+Candidate moves:
+A: R2
+B: D2
+C: U
+D: F'
+E: I don't know (abstain)
+
+Respond with exactly one line (A/B/C/D or IDK):
+<ANSWER> X </ANSWER>
+===== call 1 system =====
+You are an expert Rubik's-Cube solver. Pick exactly ONE move (A, B, C, D or IDK) that most reduces the cube's distance to solved.
+
+Context
+- The cube is 3 moves from solved under God's distance (HTM).
+- You will receive a textual cube state (ground truth) and an image (reference only). Use the TEXT ONLY to decide.
+
+Decision rule (deterministic)
+1) For each candidate, internally simulate that move on the textual state and estimate the resulting distance d1 (HTM).
+2) If any candidate solves the cube (d1=0), choose that candidate.
+3) Otherwise choose the candidate with the lowest d1.
+4) If there is a tie on d1, break ties by letter: A ≺ B ≺ C ≺ D.
+5) If you are <50% confident, abstain with IDK.
+
+Output format (STRICT)
+Return exactly one of the following on a single line:
+<ANSWER> A </ANSWER>
+<ANSWER> B </ANSWER>
+<ANSWER> C </ANSWER>
+<ANSWER> D </ANSWER>
+<ANSWER> IDK </ANSWER>
+
+No explanations, no extra text.
+
+===== call 1 user =====
+The cube is 3 moves away from being solved.
+
+Textual Cube State (ground truth):
+         [w][y][y]
+         [w][y][y]
+         [w][y][y]
+[g][g][g][r][r][r][g][g][g][o][o][o]
+[r][r][r][b][g][g][o][o][o][b][b][g]
+[b][b][b][o][o][o][b][b][b][r][r][r]
+         [y][w][w]
+         [y][w][w]
+         [y][w][w]
+
+
+Candidate moves:
+A: L'
+B: L2
+C: R
+D: F'
+E: I don't know (abstain)
+
+Respond with exactly one line (A/B/C/D or IDK):
+<ANSWER> X </ANSWER>
+===== call 2 system =====
+You are an expert Rubik's-Cube solver. Pick exactly ONE move (A, B, C, D or IDK) that most reduces the cube's distance to solved.
+
+Context
+- The cube is 3 moves from solved under God's distance (HTM).
+- You will receive a textual cube state (ground truth) and an image (reference only). Use the TEXT ONLY to decide.
+
+Decision rule (deterministic)
+1) For each candidate, internally simulate that move on the textual state and estimate the resulting distance d1 (HTM).
+2) If any candidate solves the cube (d1=0), choose that candidate.
+3) Otherwise choose the candidate with the lowest d1.
+4) If there is a tie on d1, break ties by letter: A ≺ B ≺ C ≺ D.
+5) If you are <50% confident, abstain with IDK.
+
+Output format (STRICT)
+Return exactly one of the following on a single line:
+<ANSWER> A </ANSWER>
+<ANSWER> B </ANSWER>
+<ANSWER> C </ANSWER>
+<ANSWER> D </ANSWER>
+<ANSWER> IDK </ANSWER>
+
+No explanations, no extra text.
+
+===== call 2 user =====
+The cube is 3 moves away from being solved.
+
+Textual Cube State (ground truth):
+         [g][y][y]
+         [b][y][y]
+         [b][r][r]
+[o][r][r][y][g][g][y][o][o][b][b][w]
+[o][r][r][y][g][g][y][o][o][b][b][w]
+[w][w][w][o][g][g][y][r][r][g][g][r]
+         [b][o][o]
+         [b][w][w]
+         [b][w][w]
+
+
+Candidate moves:
+A: F
+B: U'
+C: L'
+D: D2
+E: I don't know (abstain)
+
+Respond with exactly one line (A/B/C/D or IDK):
+<ANSWER> X </ANSWER>

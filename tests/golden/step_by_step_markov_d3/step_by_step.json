@@ -1,0 +1,470 @@
+[
+    {
+        "model_name": "mock-model",
+        "test_type": "step_by_step",
+        "timestamp": "<TIMESTAMP>",
+        "scoring": "oracle-optimal move from the state actually reached",
+        "exact_scramble_depth": true,
+        "arm": "markov",
+        "history_config": {
+            "enabled": false,
+            "images": true,
+            "full_responses": true
+        },
+        "generation_config": {
+            "thinking_budget": null
+        },
+        "seed_config": {
+            "seed_run": null,
+            "seed_prefix": 0
+        },
+        "n_moves_scrambled": 3,
+        "average_solve_depth": 0.5,
+        "perfect_solves_ratio": 0.0,
+        "step_accuracy": [
+            0.375,
+            0.3333333333333333,
+            0.0
+        ],
+        "first_error_hist": {
+            "3": 1,
+            "1": 5,
+            "2": 2
+        },
+        "confusion_matrix": {
+            "U": {
+                "U": 1,
+                "D": 1
+            },
+            "B": {
+                "B": 1
+            },
+            "D2": {
+                "L2": 1,
+                "D2": 1
+            },
+            "L2": {
+                "L'": 1
+            },
+            "L'": {
+                "U'": 1
+            },
+            "D'": {
+                "F": 1
+            },
+            "B2": {
+                "F": 1
+            },
+            "R'": {
+                "F2": 1
+            },
+            "R2": {
+                "R2": 1
+            },
+            "F": {
+                "R2": 1
+            }
+        },
+        "avg_latency_ms": <LATENCY>,
+        "num_samples": 8,
+        "requested_samples": 8,
+        "completed_samples": 8,
+        "missing_seeds": [],
+        "complete": true,
+        "selective": {
+            "coverage_overall": 1.0,
+            "coverage_by_step": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "selective_accuracy": 0.3333333333333333,
+            "n_correct": 4,
+            "n_wrong": 8,
+            "n_idk": 0,
+            "total_decisions": 12
+        },
+        "abstention": {
+            "enabled": false,
+            "policy": "teacher_on_abstain",
+            "idk_weight": 0.25,
+            "apa": 0.3333333333333333,
+            "conf_threshold": 50
+        },
+        "parse_failures": 0,
+        "parse_fail_rate": 0.0,
+        "step_position_split": {
+            "t1_accuracy": 0.375,
+            "t1_n": 8,
+            "t2plus_accuracy": 0.25,
+            "t2plus_n": 4
+        },
+        "cycling": {
+            "repeat_prev_move": 1,
+            "repeat_any_move": 1,
+            "revisited_state": 0,
+            "n_t2plus_decisions": 4,
+            "repeat_any_move_rate": 0.25,
+            "revisited_state_rate": 0.0
+        },
+        "samples": [
+            {
+                "sample_id": 0,
+                "scramble": "D2 B' U'",
+                "solution_path": [
+                    "U",
+                    "B",
+                    "D2"
+                ],
+                "steps_data": [
+                    {
+                        "step": 0,
+                        "cube_state": "         [r][y][y]\n         [r][y][y]\n         [o][y][y]\n[b][b][g][w][r][r][g][g][g][o][o][y]\n[w][r][r][g][g][g][o][o][y][b][b][g]\n[w][o][o][b][b][b][r][r][y][b][b][g]\n         [w][w][w]\n         [w][w][w]\n         [r][o][o]\n",
+                        "options": {
+                            "A": "R2",
+                            "B": "D2",
+                            "C": "U",
+                            "D": "F'"
+                        },
+                        "correct_letter": "C",
+                        "teacher_move": "U",
+                        "oracle_good_moves": [
+                            "U"
+                        ],
+                        "oracle_distance": 3,
+                        "full_response": "<ANSWER> C </ANSWER>",
+                        "predicted_letter": "C",
+                        "chosen_move": "U",
+                        "is_correct": true,
+                        "is_prompt_correct": true
+                    },
+                    {
+                        "step": 1,
+                        "cube_state": "         [o][r][r]\n         [y][y][y]\n         [y][y][y]\n[w][r][r][g][g][g][o][o][y][b][b][g]\n[w][r][r][g][g][g][o][o][y][b][b][g]\n[w][o][o][b][b][b][r][r][y][b][b][g]\n         [w][w][w]\n         [w][w][w]\n         [r][o][o]\n",
+                        "options": {
+                            "A": "R2",
+                            "B": "F'",
+                            "C": "U'",
+                            "D": "B"
+                        },
+                        "correct_letter": "D",
+                        "teacher_move": "B",
+                        "oracle_good_moves": [
+                            "B"
+                        ],
+                        "oracle_distance": 2,
+                        "full_response": "<ANSWER> D </ANSWER>",
+                        "predicted_letter": "D",
+                        "chosen_move": "B",
+                        "is_correct": true,
+                        "is_prompt_correct": true
+                    },
+                    {
+                        "step": 2,
+                        "cube_state": "         [y][y][y]\n         [y][y][y]\n         [y][y][y]\n[r][r][r][g][g][g][o][o][o][b][b][b]\n[r][r][r][g][g][g][o][o][o][b][b][b]\n[o][o][o][b][b][b][r][r][r][g][g][g]\n         [w][w][w]\n         [w][w][w]\n         [w][w][w]\n",
+                        "options": {
+                            "A": "F'",
+                            "B": "L2",
+                            "C": "F2",
+                            "D": "D2"
+                        },
+                        "correct_letter": "D",
+                        "teacher_move": "D2",
+                        "oracle_good_moves": [
+                            "D2"
+                        ],
+                        "oracle_distance": 1,
+                        "full_response": "<ANSWER> B </ANSWER>",
+                        "predicted_letter": "B",
+                        "chosen_move": "L2",
+                        "is_correct": false,
+                        "is_prompt_correct": false
+                    }
+                ],
+                "final_solved": false,
+                "oracle_correct_steps": 2
+            },
+            {
+                "sample_id": 1,
+                "scramble": "U' D' L2",
+                "solution_path": [
+                    "L2",
+                    "D",
+                    "U"
+                ],
+                "steps_data": [
+                    {
+                        "step": 0,
+                        "cube_state": "         [w][y][y]\n         [w][y][y]\n         [w][y][y]\n[g][g][g][r][r][r][g][g][g][o][o][o]\n[r][r][r][b][g][g][o][o][o][b][b][g]\n[b][b][b][o][o][o][b][b][b][r][r][r]\n         [y][w][w]\n         [y][w][w]\n         [y][w][w]\n",
+                        "options": {
+                            "A": "L'",
+                            "B": "L2",
+                            "C": "R",
+                            "D": "F'"
+                        },
+                        "correct_letter": "B",
+                        "teacher_move": "L2",
+                        "oracle_good_moves": [
+                            "L2"
+                        ],
+                        "oracle_distance": 3,
+                        "full_response": "<ANSWER> A </ANSWER>",
+                        "predicted_letter": "A",
+                        "chosen_move": "L'",
+                        "is_correct": false,
+                        "is_prompt_correct": false
+                    }
+                ],
+                "final_solved": false,
+                "oracle_correct_steps": 0
+            },
+            {
+                "sample_id": 2,
+                "scramble": "D2 F L",
+                "solution_path": [
+                    "L'",
+                    "F'",
+                    "D2"
+                ],
+                "steps_data": [
+                    {
+                        "step": 0,
+                        "cube_state": "         [g][y][y]\n         [b][y][y]\n         [b][r][r]\n[o][r][r][y][g][g][y][o][o][b][b][w]\n[o][r][r][y][g][g][y][o][o][b][b][w]\n[w][w][w][o][g][g][y][r][r][g][g][r]\n         [b][o][o]\n         [b][w][w]\n         [b][w][w]\n",
+                        "options": {
+                            "A": "F",
+                            "B": "U'",
+                            "C": "L'",
+                            "D": "D2"
+                        },
+                        "correct_letter": "C",
+                        "teacher_move": "L'",
+                        "oracle_good_moves": [
+                            "L'"
+                        ],
+                        "oracle_distance": 3,
+                        "full_response": "<ANSWER> B </ANSWER>",
+                        "predicted_letter": "B",
+                        "chosen_move": "U'",
+                        "is_correct": false,
+                        "is_prompt_correct": false
+                    }
+                ],
+                "final_solved": false,
+                "oracle_correct_steps": 0
+            },
+            {
+                "sample_id": 3,
+                "scramble": "U2 L D",
+                "solution_path": [
+                    "D'",
+                    "L'",
+                    "U2"
+                ],
+                "steps_data": [
+                    {
+                        "step": 0,
+                        "cube_state": "         [b][y][y]\n         [b][y][y]\n         [g][y][y]\n[r][r][o][y][b][b][r][r][r][g][g][w]\n[r][r][o][y][g][g][o][o][o][b][b][w]\n[b][b][w][r][r][o][y][g][g][o][o][o]\n         [g][g][b]\n         [w][w][w]\n         [w][w][w]\n",
+                        "options": {
+                            "A": "B'",
+                            "B": "U",
+                            "C": "D'",
+                            "D": "F"
+                        },
+                        "correct_letter": "C",
+                        "teacher_move": "D'",
+                        "oracle_good_moves": [
+                            "D'"
+                        ],
+                        "oracle_distance": 3,
+                        "full_response": "<ANSWER> D </ANSWER>",
+                        "predicted_letter": "D",
+                        "chosen_move": "F",
+                        "is_correct": false,
+                        "is_prompt_correct": false
+                    }
+                ],
+                "final_solved": false,
+                "oracle_correct_steps": 0
+            },
+            {
+                "sample_id": 4,
+                "scramble": "L2 B2 D2",
+                "solution_path": [
+                    "D2",
+                    "B2",
+                    "L2"
+                ],
+                "steps_data": [
+                    {
+                        "step": 0,
+                        "cube_state": "         [w][w][y]\n         [w][y][y]\n         [w][y][y]\n[o][r][r][b][g][g][o][o][r][g][b][b]\n[o][r][r][b][g][g][o][o][r][g][b][b]\n[o][o][r][g][b][b][o][r][r][b][g][g]\n         [w][y][y]\n         [w][w][y]\n         [w][w][y]\n",
+                        "options": {
+                            "A": "U'",
+                            "B": "B2",
+                            "C": "U2",
+                            "D": "D2"
+                        },
+                        "correct_letter": "D",
+                        "teacher_move": "D2",
+                        "oracle_good_moves": [
+                            "D2"
+                        ],
+                        "oracle_distance": 3,
+                        "full_response": "<ANSWER> D </ANSWER>",
+                        "predicted_letter": "D",
+                        "chosen_move": "D2",
+                        "is_correct": true,
+                        "is_prompt_correct": true
+                    },
+                    {
+                        "step": 1,
+                        "cube_state": "         [w][w][y]\n         [w][y][y]\n         [w][y][y]\n[o][r][r][b][g][g][o][o][r][g][b][b]\n[o][r][r][b][g][g][o][o][r][g][b][b]\n[o][r][r][b][g][g][o][o][r][g][b][b]\n         [y][w][w]\n         [y][w][w]\n         [y][y][w]\n",
+                        "options": {
+                            "A": "B'",
+                            "B": "R2",
+                            "C": "F",
+                            "D": "B2"
+                        },
+                        "correct_letter": "D",
+                        "teacher_move": "B2",
+                        "oracle_good_moves": [
+                            "B2"
+                        ],
+                        "oracle_distance": 2,
+                        "full_response": "<ANSWER> C </ANSWER>",
+                        "predicted_letter": "C",
+                        "chosen_move": "F",
+                        "is_correct": false,
+                        "is_prompt_correct": false
+                    }
+                ],
+                "final_solved": false,
+                "oracle_correct_steps": 1
+            },
+            {
+                "sample_id": 5,
+                "scramble": "R2 D2 R",
+                "solution_path": [
+                    "R'",
+                    "D2",
+                    "R2"
+                ],
+                "steps_data": [
+                    {
+                        "step": 0,
+                        "cube_state": "         [y][y][b]\n         [y][y][b]\n         [y][y][b]\n[r][r][r][g][g][w][r][o][o][w][b][b]\n[r][r][r][g][g][w][r][o][o][w][b][b]\n[o][o][o][g][b][w][r][o][o][w][g][b]\n         [y][w][g]\n         [y][w][g]\n         [y][w][g]\n",
+                        "options": {
+                            "A": "F2",
+                            "B": "D",
+                            "C": "L",
+                            "D": "R'"
+                        },
+                        "correct_letter": "D",
+                        "teacher_move": "R'",
+                        "oracle_good_moves": [
+                            "R'"
+                        ],
+                        "oracle_distance": 3,
+                        "full_response": "<ANSWER> A </ANSWER>",
+                        "predicted_letter": "A",
+                        "chosen_move": "F2",
+                        "is_correct": false,
+                        "is_prompt_correct": false
+                    }
+                ],
+                "final_solved": false,
+                "oracle_correct_steps": 0
+            },
+            {
+                "sample_id": 6,
+                "scramble": "U' F' U'",
+                "solution_path": [
+                    "U",
+                    "F",
+                    "U"
+                ],
+                "steps_data": [
+                    {
+                        "step": 0,
+                        "cube_state": "         [y][y][o]\n         [y][y][o]\n         [y][y][g]\n[o][o][o][b][b][y][r][g][g][w][g][g]\n[r][r][y][r][g][g][w][o][o][b][b][b]\n[r][r][y][r][g][g][w][o][o][b][b][b]\n         [b][r][r]\n         [w][w][w]\n         [w][w][w]\n",
+                        "options": {
+                            "A": "R'",
+                            "B": "D",
+                            "C": "U'",
+                            "D": "U"
+                        },
+                        "correct_letter": "D",
+                        "teacher_move": "U",
+                        "oracle_good_moves": [
+                            "U"
+                        ],
+                        "oracle_distance": 3,
+                        "full_response": "<ANSWER> B </ANSWER>",
+                        "predicted_letter": "B",
+                        "chosen_move": "D",
+                        "is_correct": false,
+                        "is_prompt_correct": false
+                    }
+                ],
+                "final_solved": false,
+                "oracle_correct_steps": 0
+            },
+            {
+                "sample_id": 7,
+                "scramble": "B2 F' R2",
+                "solution_path": [
+                    "R2",
+                    "F",
+                    "B2"
+                ],
+                "steps_data": [
+                    {
+                        "step": 0,
+                        "cube_state": "         [w][w][r]\n         [y][y][w]\n         [o][o][y]\n[o][r][y][g][g][b][r][o][w][g][b][b]\n[o][r][y][g][g][b][r][o][w][g][b][b]\n[o][r][y][g][g][b][r][o][w][g][b][b]\n         [r][r][w]\n         [w][w][y]\n         [y][y][o]\n",
+                        "options": {
+                            "A": "L2",
+                            "B": "R2",
+                            "C": "F'",
+                            "D": "U"
+                        },
+                        "correct_letter": "B",
+                        "teacher_move": "R2",
+                        "oracle_good_moves": [
+                            "R2"
+                        ],
+                        "oracle_distance": 3,
+                        "full_response": "<ANSWER> B </ANSWER>",
+                        "predicted_letter": "B",
+                        "chosen_move": "R2",
+                        "is_correct": true,
+                        "is_prompt_correct": true
+                    },
+                    {
+                        "step": 1,
+                        "cube_state": "         [w][w][w]\n         [y][y][y]\n         [o][o][o]\n[o][r][y][g][g][g][w][o][r][b][b][b]\n[o][r][y][g][g][g][w][o][r][b][b][b]\n[o][r][y][g][g][g][w][o][r][b][b][b]\n         [r][r][r]\n         [w][w][w]\n         [y][y][y]\n",
+                        "options": {
+                            "A": "F",
+                            "B": "B2",
+                            "C": "L2",
+                            "D": "R2"
+                        },
+                        "correct_letter": "A",
+                        "teacher_move": "F",
+                        "oracle_good_moves": [
+                            "B2",
+                            "F"
+                        ],
+                        "oracle_distance": 2,
+                        "full_response": "<ANSWER> D </ANSWER>",
+                        "predicted_letter": "D",
+                        "chosen_move": "R2",
+                        "is_correct": false,
+                        "is_prompt_correct": false
+                    }
+                ],
+                "final_solved": false,
+                "oracle_correct_steps": 1
+            }
+        ]
+    }
+]

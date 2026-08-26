@@ -1,0 +1,50 @@
+[
+    {
+        "model_name": "mock-model",
+        "test_type": "learning_curve",
+        "timestamp": "<TIMESTAMP>",
+        "n_moves": 3,
+        "max_attempts": 6,
+        "accept_progress": true,
+        "total_scrambles": 6,
+        "episodes_with_failure": 6,
+        "pre_fail_reasons": [
+            "non_progress",
+            "non_progress",
+            "non_progress",
+            "non_progress",
+            "non_progress",
+            "non_progress"
+        ],
+        "attempts_needed": [
+            6,
+            6,
+            6,
+            6,
+            6,
+            6
+        ],
+        "solved_flags": [
+            false,
+            false,
+            false,
+            false,
+            false,
+            false
+        ],
+        "n": 6,
+        "solved_n": 0,
+        "success_rate": 0.0,
+        "sr_ci95": [
+            0.0,
+            0.3903430336530645
+        ],
+        "p1": 0.0,
+        "p_le_3": 0.0,
+        "med_at_solved": null,
+        "avg_attempts_all_maxed": 6.0,
+        "avg_attempts_all": 6.0,
+        "hist_counts": {},
+        "plot_path": "<PATH>"
+    }
+]

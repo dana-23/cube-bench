@@ -1,0 +1,31 @@
+[
+    {
+        "model_name": "mock-model",
+        "test_type": "prediction",
+        "timestamp": "<TIMESTAMP>",
+        "prompt_type": "mixed",
+        "average_accuracy": 0.0,
+        "num_samples": 1,
+        "per_item": [
+            {
+                "id": 0,
+                "pred": "C",
+                "gold": "A",
+                "correct_move": "D2",
+                "options": {
+                    "A": "D2",
+                    "B": "R2",
+                    "C": "R",
+                    "D": "L2"
+                },
+                "scramble": "D2",
+                "ok": 0
+            }
+        ],
+        "meta": {
+            "n_moves": 1,
+            "generator": "VirtualCube",
+            "prompt_source": "PromptFactory"
+        }
+    }
+]

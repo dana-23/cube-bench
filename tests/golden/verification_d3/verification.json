@@ -1,0 +1,81 @@
+[
+    {
+        "model_name": "mock-model",
+        "test_type": "verification",
+        "timestamp": "<TIMESTAMP>",
+        "average_accuracy": 0.4583333333333333,
+        "num_samples": 24,
+        "metrics": {
+            "accuracy": 0.4583333333333333,
+            "balanced_accuracy": 0.45833333333333337,
+            "parse_rate": 1.0,
+            "parse_violation": 0.0,
+            "yes_rate": 0.4583333333333333,
+            "confusion": {
+                "tp": 5,
+                "tn": 6,
+                "fp": 6,
+                "fn": 7
+            },
+            "unparsed": 0,
+            "support": {
+                "pos": 12,
+                "neg": 12
+            },
+            "by_polarity": {
+                "affirmative": {
+                    "n": 12,
+                    "accuracy": 0.5,
+                    "balanced_accuracy": 0.5,
+                    "yes_label_share": 0.5
+                },
+                "negated": {
+                    "n": 12,
+                    "accuracy": 0.4166666666666667,
+                    "balanced_accuracy": 0.41666666666666663,
+                    "yes_label_share": 0.5
+                }
+            },
+            "by_template": {
+                "affirmative:0": {
+                    "n": 4,
+                    "accuracy": 0.5,
+                    "yes_label_share": 0.5
+                },
+                "negated:0": {
+                    "n": 4,
+                    "accuracy": 0.5,
+                    "yes_label_share": 0.5
+                },
+                "affirmative:1": {
+                    "n": 4,
+                    "accuracy": 0.25,
+                    "yes_label_share": 0.5
+                },
+                "negated:1": {
+                    "n": 4,
+                    "accuracy": 0.5,
+                    "yes_label_share": 0.5
+                },
+                "affirmative:2": {
+                    "n": 4,
+                    "accuracy": 0.75,
+                    "yes_label_share": 0.5
+                },
+                "negated:2": {
+                    "n": 4,
+                    "accuracy": 0.25,
+                    "yes_label_share": 0.5
+                }
+            },
+            "max_template_label_skew": 0.0
+        },
+        "meta": {
+            "generator": "VirtualCube",
+            "scramble_depth": 3,
+            "front_affecting_mismatch": true,
+            "polarity_reversals": true,
+            "surface_forms_per_polarity": 3
+        }
+    }
+]

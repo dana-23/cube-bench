@@ -1,0 +1,145 @@
+[
+    {
+        "model_name": "mock-model",
+        "test_type": "invariance_sweep",
+        "timestamp": "<TIMESTAMP>",
+        "n_moves": 3,
+        "variants": [
+            "clean",
+            "occl",
+            "bright",
+            "recolor"
+        ],
+        "perturb_params": {
+            "occl_band_frac_h": 0.15,
+            "bright_factor": 0.8,
+            "recolor_map": {
+                "white": "yellow",
+                "yellow": "white",
+                "orange": "red",
+                "red": "orange",
+                "green": "blue",
+                "blue": "green"
+            },
+            "note": "No rotation condition because VirtualCube does not implement 'rot90'."
+        },
+        "summary": {
+            "clean": {
+                "n": 6,
+                "accuracy": 0.0,
+                "avg_latency_s": <LATENCY>,
+                "delta_vs_clean": 0.0,
+                "parse_rate": 1.0,
+                "pred_label_prior_counts": {
+                    "D": 3,
+                    "C": 1,
+                    "A": 1,
+                    "B": 1
+                },
+                "errors": 0
+            },
+            "occl": {
+                "n": 6,
+                "accuracy": 0.0,
+                "avg_latency_s": <LATENCY>,
+                "delta_vs_clean": 0.0,
+                "parse_rate": 1.0,
+                "pred_label_prior_counts": {
+                    "D": 3,
+                    "C": 1,
+                    "A": 1,
+                    "B": 1
+                },
+                "errors": 0
+            },
+            "bright": {
+                "n": 6,
+                "accuracy": 0.0,
+                "avg_latency_s": <LATENCY>,
+                "delta_vs_clean": 0.0,
+                "parse_rate": 1.0,
+                "pred_label_prior_counts": {
+                    "D": 3,
+                    "C": 1,
+                    "A": 1,
+                    "B": 1
+                },
+                "errors": 0
+            },
+            "recolor": {
+                "n": 6,
+                "accuracy": 0.0,
+                "avg_latency_s": <LATENCY>,
+                "delta_vs_clean": 0.0,
+                "parse_rate": 1.0,
+                "pred_label_prior_counts": {
+                    "D": 3,
+                    "C": 1,
+                    "A": 1,
+                    "B": 1
+                },
+                "errors": 0
+            }
+        },
+        "counts": {
+            "clean": {
+                "correct": 0,
+                "total": 6,
+                "parsed": 6
+            },
+            "occl": {
+                "correct": 0,
+                "total": 6,
+                "parsed": 6
+            },
+            "bright": {
+                "correct": 0,
+                "total": 6,
+                "parsed": 6
+            },
+            "recolor": {
+                "correct": 0,
+                "total": 6,
+                "parsed": 6
+            }
+        },
+        "gold_prior_counts": {
+            "A": 2,
+            "B": 2,
+            "C": 1,
+            "D": 1
+        },
+        "plot_data": {
+            "x": [
+                "clean",
+                "occl",
+                "bright",
+                "recolor"
+            ],
+            "y_accuracy": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+            ],
+            "y_delta_vs_clean": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+            ],
+            "y_latency_s": [<LATENCY>],
+            "y_parse_rate": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+            ]
+        },
+        "meta": {
+            "balance_gold_letters": true,
+            "add_labels": true,
+            "max_new_tokens": 64
+        }
+    }
+]

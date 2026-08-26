@@ -1,0 +1,30 @@
+{
+  "model": "mock-model",
+  "reflection_type": "Redacted",
+  "reflect_all": false,
+  "reveal_choice": false,
+  "assert_incorrect": "always",
+  "reanswer_mode": "legacy",
+  "draft_source": "fresh",
+  "n_draft_unparsed": 0,
+  "n_items": 6,
+  "n_reflected": 4,
+  "initial_accuracy": 0.3333,
+  "final_accuracy_over_all": null,
+  "final_accuracy_over_reflected": 0.0,
+  "error_fix_rate": 0.0,
+  "error_fix_rate_ci95": [
+    0.0,
+    0.4899
+  ],
+  "overthink_rate": null,
+  "overthink_rate_ci95": null,
+  "paired_net_gain_over_all": 0,
+  "paired_net_gain_over_reflected": 0,
+  "parse_rate": 1.0,
+  "delta_tokens_total": 0,
+  "delta_tokens_per_item": 0,
+  "delta_latency_ms_total": <LATENCY>,
+  "delta_latency_ms_per_item": <LATENCY>,
+  "run_dir": "<PATH>"
+}

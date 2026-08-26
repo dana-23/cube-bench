@@ -1,0 +1,13 @@
+[
+    {
+        "model_name": "mock-model",
+        "test_type": "reconstruction",
+        "timestamp": "<TIMESTAMP>",
+        "average_accuracy_element_wise": 0.125,
+        "average_accuracy_overall": 0.0,
+        "num_samples": 8,
+        "n_moves": 2,
+        "correct_parse": 8,
+        "max_prior_deviation": 0.45833333333333337
+    }
+]

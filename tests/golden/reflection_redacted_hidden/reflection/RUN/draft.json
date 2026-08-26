@@ -1,0 +1,42 @@
+{
+  "source": "fresh",
+  "num_samples": 6,
+  "per_item": [
+    {
+      "id": 0,
+      "pred": "C",
+      "gold": "A",
+      "ok": 0
+    },
+    {
+      "id": 1,
+      "pred": "B",
+      "gold": "B",
+      "ok": 1
+    },
+    {
+      "id": 2,
+      "pred": "C",
+      "gold": "C",
+      "ok": 1
+    },
+    {
+      "id": 3,
+      "pred": "B",
+      "gold": "D",
+      "ok": 0
+    },
+    {
+      "id": 4,
+      "pred": "B",
+      "gold": "A",
+      "ok": 0
+    },
+    {
+      "id": 5,
+      "pred": "D",
+      "gold": "B",
+      "ok": 0
+    }
+  ]
+}

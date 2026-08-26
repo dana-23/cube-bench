@@ -1,0 +1,151 @@
+[
+    {
+        "model_name": "mock-model",
+        "test_type": "move_effect",
+        "timestamp": "<TIMESTAMP>",
+        "n_moves": 1,
+        "micro_acc": 0.25,
+        "macro_f1": 0.2510822510822511,
+        "kappa": -0.10982658959537572,
+        "per_class_precision": {
+            "INCREASE": 0.3333333333333333,
+            "NO_CHANGE": 0.2,
+            "DECREASE": 0.23076923076923078
+        },
+        "per_class_recall": {
+            "INCREASE": 0.25,
+            "NO_CHANGE": 0.16666666666666666,
+            "DECREASE": 0.375
+        },
+        "per_class_f1": {
+            "INCREASE": 0.28571428571428575,
+            "NO_CHANGE": 0.1818181818181818,
+            "DECREASE": 0.2857142857142857
+        },
+        "labels_total": 32,
+        "confusion": {
+            "NO_CHANGE": {
+                "DECREASE": 7,
+                "INCREASE": 3,
+                "NO_CHANGE": 2
+            },
+            "DECREASE": {
+                "DECREASE": 3,
+                "NO_CHANGE": 2,
+                "INCREASE": 3
+            },
+            "INCREASE": {
+                "DECREASE": 3,
+                "NO_CHANGE": 6,
+                "INCREASE": 3
+            }
+        },
+        "support": {
+            "NO_CHANGE": 12,
+            "DECREASE": 8,
+            "INCREASE": 12
+        },
+        "gold_priors": {
+            "INCREASE": 0.375,
+            "NO_CHANGE": 0.375,
+            "DECREASE": 0.25
+        },
+        "pred_mix": {
+            "INCREASE": 0.28125,
+            "NO_CHANGE": 0.3125,
+            "DECREASE": 0.40625
+        },
+        "expected_dot": 0.32421875,
+        "maj_baseline": 0.375,
+        "prior_sample_baseline": 0.34375,
+        "per_distance_micro_acc": {
+            "1": 0.25
+        },
+        "option_coverage_counts": {
+            "3": 8
+        },
+        "num_samples": 8,
+        "fairness_metrics": {
+            "overall_jsd_from_uniform": 0.006077489978553483,
+            "overall_max_abs_dev_uniform": 0.08333333333333331,
+            "within5_uniform": false,
+            "overall_jsd_from_target": 0.00016369610031301014,
+            "overall_max_abs_dev_target": 0.01315789473684209,
+            "within5_target": true,
+            "slot_priors": {
+                "A": {
+                    "INCREASE": 0.375,
+                    "NO_CHANGE": 0.375,
+                    "DECREASE": 0.25
+                },
+                "B": {
+                    "INCREASE": 0.375,
+                    "NO_CHANGE": 0.375,
+                    "DECREASE": 0.25
+                },
+                "C": {
+                    "INCREASE": 0.25,
+                    "NO_CHANGE": 0.5,
+                    "DECREASE": 0.25
+                },
+                "D": {
+                    "INCREASE": 0.5,
+                    "NO_CHANGE": 0.25,
+                    "DECREASE": 0.25
+                }
+            },
+            "slot_jsd_from_uniform": {
+                "A": 0.006077489978553483,
+                "B": 0.006077489978553483,
+                "C": 0.020720839623908215,
+                "D": 0.020720839623908215
+            },
+            "slots_within7_uniform": false,
+            "slot_jsd_from_target": {
+                "A": 0.00016369610031301014,
+                "B": 0.00016369610031301014,
+                "C": 0.015569434950993407,
+                "D": 0.015569434950993407
+            },
+            "slots_within7_target": false,
+            "target_double_attempts": {
+                "NO_CHANGE": 4,
+                "INCREASE": 4
+            },
+            "target_double_success": {
+                "NO_CHANGE": 4,
+                "INCREASE": 4
+            },
+            "target_double_success_rate": {
+                "DECREASE": 0.0,
+                "NO_CHANGE": 1.0,
+                "INCREASE": 1.0
+            },
+            "missing_class_counts": {},
+            "composition_histogram": {
+                "(1, 2, 1)": 4,
+                "(1, 1, 2)": 4
+            },
+            "priors_by_depth": {
+                "1": {
+                    "INCREASE": 0.375,
+                    "NO_CHANGE": 0.375,
+                    "DECREASE": 0.25
+                }
+            },
+            "dev_by_depth": {
+                "1": {
+                    "max_abs_dev_uniform": 0.08333333333333331,
+                    "jsd_from_uniform": 0.006077489978553483,
+                    "max_abs_dev_target": 0.01315789473684209,
+                    "jsd_from_target": 0.00016369610031301014
+                }
+            },
+            "target_mix_overall": {
+                "DECREASE": 0.2631578947368421,
+                "NO_CHANGE": 0.3684210526315789,
+                "INCREASE": 0.3684210526315789
+            }
+        }
+    }
+]

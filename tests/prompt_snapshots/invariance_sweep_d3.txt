@@ -1,0 +1,81 @@
+===== call 0 system =====
+You are given an image of a Rubik's Cube net and a multiple-choice question.
+You will also receive a TEXTUAL serialization of the state.
+If the image and the TEXT conflict (e.g., recolored stickers), FOLLOW THE TEXT.
+Choose exactly one option: A, B, C, or D.
+Respond using either the XML tag <ANSWER> A </ANSWER> or 'ANSWER: A' with just one letter.
+===== call 0 user =====
+TEXT (state serialization):
+         [r][y][y]
+         [r][y][y]
+         [o][y][y]
+[b][b][g][w][r][r][g][g][g][o][o][y]
+[w][r][r][g][g][g][o][o][y][b][b][g]
+[w][o][o][b][b][b][r][r][y][b][b][g]
+         [w][w][w]
+         [w][w][w]
+         [r][o][o]
+
+
+Start from a 3-move scramble. Which next move best adheres to the known inverse-scramble teacher path?
+
+A) U
+B) L2
+C) R
+D) U2
+
+Answer with exactly one letter (A–D) using <ANSWER> A </ANSWER> or 'ANSWER: A'.
+===== call 1 system =====
+You are given an image of a Rubik's Cube net and a multiple-choice question.
+You will also receive a TEXTUAL serialization of the state.
+If the image and the TEXT conflict (e.g., recolored stickers), FOLLOW THE TEXT.
+Choose exactly one option: A, B, C, or D.
+Respond using either the XML tag <ANSWER> A </ANSWER> or 'ANSWER: A' with just one letter.
+===== call 1 user =====
+TEXT (state serialization):
+         [r][y][y]
+         [r][y][y]
+         [o][y][y]
+[b][b][g][w][r][r][g][g][g][o][o][y]
+[w][r][r][g][g][g][o][o][y][b][b][g]
+[w][o][o][b][b][b][r][r][y][b][b][g]
+         [w][w][w]
+         [w][w][w]
+         [r][o][o]
+
+
+Start from a 3-move scramble. Which next move best adheres to the known inverse-scramble teacher path?
+
+A) U
+B) L2
+C) R
+D) U2
+
+Answer with exactly one letter (A–D) using <ANSWER> A </ANSWER> or 'ANSWER: A'.
+===== call 2 system =====
+You are given an image of a Rubik's Cube net and a multiple-choice question.
+You will also receive a TEXTUAL serialization of the state.
+If the image and the TEXT conflict (e.g., recolored stickers), FOLLOW THE TEXT.
+Choose exactly one option: A, B, C, or D.
+Respond using either the XML tag <ANSWER> A </ANSWER> or 'ANSWER: A' with just one letter.
+===== call 2 user =====
+TEXT (state serialization):
+         [r][y][y]
+         [r][y][y]
+         [o][y][y]
+[b][b][g][w][r][r][g][g][g][o][o][y]
+[w][r][r][g][g][g][o][o][y][b][b][g]
+[w][o][o][b][b][b][r][r][y][b][b][g]
+         [w][w][w]
+         [w][w][w]
+         [r][o][o]
+
+
+Start from a 3-move scramble. Which next move best adheres to the known inverse-scramble teacher path?
+
+A) U
+B) L2
+C) R
+D) U2
+
+Answer with exactly one letter (A–D) using <ANSWER> A </ANSWER> or 'ANSWER: A'.
