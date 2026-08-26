@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import math
 import random
 import re
 import time
@@ -16,6 +15,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from ..config import Config
 from ..io import save_results
+from . import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -283,12 +283,7 @@ class BaseTest(ABC):
     @staticmethod
     def wilson_ci(p: float, n: int, z: float = 1.96) -> Tuple[float, float]:
         """95% Wilson score interval for a Bernoulli proportion ``p`` over ``n``."""
-        if n <= 0 or not (0.0 <= p <= 1.0) or math.isnan(p):
-            return (float("nan"), float("nan"))
-        denom = 1.0 + (z * z) / n
-        center = (p + (z * z) / (2 * n)) / denom
-        margin = z * math.sqrt((p * (1 - p) / n) + (z * z) / (4 * n * n)) / denom
-        return (max(0.0, center - margin), min(1.0, center + margin))
+        return metrics.wilson_ci(p, n, z)
 
     # ----- Results -----
 
