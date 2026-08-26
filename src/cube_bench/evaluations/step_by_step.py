@@ -8,14 +8,14 @@ import threading
 import time
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from tqdm import tqdm
 
-from cube_bench.core import BaseTest
+from cube_bench.core import ItemRecord, BaseTest
 from cube_bench.core.results import append_jsonl, read_checkpoint
 from cube_bench.prompts.prompt_factory import PromptFactory
 from cube_bench.sim.cube_simulator import VirtualCube
@@ -69,6 +69,36 @@ class _StepOutcome:
     latency: Optional[float] = None
 
 
+@dataclass
+class _RunTotals:
+    """Episode results merged in seed order, independent of execution order."""
+
+    per_step_totals: List[int] = field(default_factory=list)
+    per_step_correct: List[int] = field(default_factory=list)
+    per_step_idk: List[int] = field(default_factory=list)
+    first_error_step: List[int] = field(default_factory=list)
+    confusion: Dict[str, Counter] = field(default_factory=lambda: defaultdict(Counter))
+    parse_failures: int = 0
+    solve_depths: List[int] = field(default_factory=list)
+    perfect_flags: List[bool] = field(default_factory=list)
+    sample_logs: List[Dict[str, Any]] = field(default_factory=list)
+    n_correct: int = 0
+    n_wrong: int = 0
+    n_idk: int = 0
+    total_decisions: int = 0
+    missing: List[int] = field(default_factory=list)
+    completed: int = 0
+
+    @classmethod
+    def for_depth(cls, n_moves: int) -> "_RunTotals":
+        """Totals with the per-step vectors sized for a ``n_moves``-deep episode."""
+        return cls(
+            per_step_totals=[0] * n_moves,
+            per_step_correct=[0] * n_moves,
+            per_step_idk=[0] * n_moves,
+        )
+
+
 class StepByStepTest(BaseTest):
     """Closed-loop: ask for next move at each step, accept optimal or teacher."""
 
@@ -95,11 +125,8 @@ class StepByStepTest(BaseTest):
         seed_prefix: int = 1,
     ):
         super().__init__(assistant, config, n_moves, verbose)
-        self.per_step_totals: List[int] = [0] * n_moves
-        self.per_step_correct: List[int] = [0] * n_moves
-        self.first_error_step: List[int] = []
-        self.confusion = defaultdict(Counter)
-        self.parse_failures = 0
+
+        self._totals = _RunTotals.for_depth(n_moves)
 
         self.idk_enabled = bool(idk_enabled)
         self.idk_weight = float(idk_weight)
@@ -107,7 +134,6 @@ class StepByStepTest(BaseTest):
         # NOTE: the `idk_conf_threshold` argument is deliberately ignored — this
         # threshold stays pinned at 50 to keep results comparable with earlier runs.
         self.idk_conf_threshold = 50
-        self.per_step_idk: List[int] = [0] * n_moves
 
         # The history arm sees prior state/action turns; the Markov arm sees only
         # the current state.
@@ -601,101 +627,124 @@ class StepByStepTest(BaseTest):
     def _load_checkpoint(path: Path) -> Dict[int, Dict[str, Any]]:
         return read_checkpoint(path, "perfect_solve")
 
-    def run(self, num_samples: int):
-        desc = f"Step-by-step ({self.n_moves} moves)"
+    def desc(self) -> str:
+        return f"Step-by-step ({self.n_moves} moves)"
 
+    # ----- Execution -----
+
+    def run_item(self, idx: int) -> ItemRecord:
+        """Run one episode; ``extra['result']`` is the persisted checkpoint record."""
+        return ItemRecord(index=idx, extra={"result": self._run_episode(idx)})
+
+    def collect(self, num_samples: int) -> List[ItemRecord]:
+        """Resume finished episodes from the checkpoint and run the rest."""
         ckpt_path = self._checkpoint_path(num_samples)
         results: Dict[int, Dict[str, Any]] = {}
         if ckpt_path is not None:
             results = self._load_checkpoint(ckpt_path)
             if results:
-                logger.info("Resuming from %s — %d/%d episodes already done",
-                            ckpt_path, len(results), num_samples)
+                self._logger.info("Resuming from %s - %d/%d episodes already done",
+                                  ckpt_path, len(results), num_samples)
 
         todo = [idx for idx in range(num_samples) if idx not in results]
         ckpt_lock = threading.Lock()
 
-        def _record(idx: int, r: Dict[str, Any]) -> None:
-            results[idx] = r
+        def _record(idx: int, record: ItemRecord) -> None:
+            results[idx] = record.extra["result"]
             if ckpt_path is not None:
                 with ckpt_lock:
-                    append_jsonl(ckpt_path, {"sample_id": idx, "result": r})
+                    append_jsonl(ckpt_path, {"sample_id": idx, "result": results[idx]})
 
         # Failed episodes remain absent from the checkpoint so a later run retries them.
         if todo:
             if self.concurrency > 1:
-                logger.info("Running %d episodes with concurrency=%d", len(todo), self.concurrency)
+                self._logger.info(
+                    "Running %d episodes with concurrency=%d", len(todo), self.concurrency)
                 with ThreadPoolExecutor(max_workers=self.concurrency) as pool:
-                    futures = {pool.submit(self._run_episode, idx): idx for idx in todo}
-                    for fut in tqdm(as_completed(futures), total=len(todo), desc=desc):
+                    futures = {pool.submit(self.run_item, idx): idx for idx in todo}
+                    for fut in tqdm(as_completed(futures), total=len(todo), desc=self.desc()):
                         idx = futures[fut]
                         try:
                             _record(idx, fut.result())
                         except Exception as e:
-                            logger.error("Episode %d failed permanently: %s", idx, e)
+                            self._logger.error("Episode %d failed permanently: %s", idx, e)
             else:
-                for idx in tqdm(todo, desc=desc):
+                for idx in tqdm(todo, desc=self.desc()):
                     try:
-                        _record(idx, self._run_episode(idx))
+                        _record(idx, self.run_item(idx))
                     except Exception as e:
-                        logger.error("Episode %d failed permanently: %s", idx, e)
+                        self._logger.error("Episode %d failed permanently: %s", idx, e)
 
         done = sorted(results)
-        missing = [idx for idx in range(num_samples) if idx not in results]
-        if missing:
-            logger.warning(
-                "%d/%d episodes incomplete: %s — re-run the same command to resume%s.",
-                len(missing), num_samples, missing,
+        self._totals.missing = [idx for idx in range(num_samples) if idx not in results]
+        if self._totals.missing:
+            self._logger.warning(
+                "%d/%d episodes incomplete: %s - re-run the same command to resume%s.",
+                len(self._totals.missing), num_samples, self._totals.missing,
                 f" (checkpoint: {ckpt_path})" if ckpt_path else "",
             )
+        self._totals.completed = len(done)
 
         # Seed-order merging keeps metrics deterministic across execution orders.
-        solve_depths: List[int] = []
-        perfect_flags: List[bool] = []
-        all_sample_logs: List[Dict[str, Any]] = []
-        n_correct = n_wrong = n_idk = 0
-        total_decisions = 0
-
+        records: List[ItemRecord] = []
         for idx in done:
-            r = results[idx]
-            all_sample_logs.append(r["sample_log"])
-            solve_depths.append(r["correct_steps"])
-            perfect_flags.append(bool(r["perfect_solve"]))
-            for i in range(self.n_moves):
-                self.per_step_totals[i] += r["per_step_totals"][i]
-                self.per_step_correct[i] += r["per_step_correct"][i]
-                self.per_step_idk[i] += r["per_step_idk"][i]
-            for tm, om in r["confusion_pairs"]:
-                self.confusion[tm][om] += 1
-            self.latencies.extend(r["latencies"])
-            if r["first_error_step"] is not None:
-                self.first_error_step.append(r["first_error_step"])
-            self.parse_failures += r["parse_failures"]
-            n_correct += r["n_correct"]
-            n_wrong += r["n_wrong"]
-            n_idk += r["n_idk"]
-            total_decisions += r["total_decisions"]
+            record = ItemRecord(index=idx, extra={"result": results[idx]})
+            self.accumulate(record)
+            records.append(record)
+        return records
+
+    def accumulate(self, record: ItemRecord) -> None:
+        r = record.extra["result"]
+        self._totals.sample_logs.append(r["sample_log"])
+        self._totals.solve_depths.append(r["correct_steps"])
+        self._totals.perfect_flags.append(bool(r["perfect_solve"]))
+        for i in range(self.n_moves):
+            self._totals.per_step_totals[i] += r["per_step_totals"][i]
+            self._totals.per_step_correct[i] += r["per_step_correct"][i]
+            self._totals.per_step_idk[i] += r["per_step_idk"][i]
+        for tm, om in r["confusion_pairs"]:
+            self._totals.confusion[tm][om] += 1
+        self.latencies.extend(r["latencies"])
+        if r["first_error_step"] is not None:
+            self._totals.first_error_step.append(r["first_error_step"])
+        self._totals.parse_failures += r["parse_failures"]
+        self._totals.n_correct += r["n_correct"]
+        self._totals.n_wrong += r["n_wrong"]
+        self._totals.n_idk += r["n_idk"]
+        self._totals.total_decisions += r["total_decisions"]
+
+    # ----- Aggregation -----
+
+    def aggregate(self, records: List[ItemRecord], num_samples: int) -> Dict[str, Any]:
+        totals = self._totals
+        solve_depths = totals.solve_depths
+        perfect_flags = totals.perfect_flags
+        all_sample_logs = totals.sample_logs
+        n_correct, n_wrong = totals.n_correct, totals.n_wrong
+        n_idk, total_decisions = totals.n_idk, totals.total_decisions
+        missing, done = totals.missing, range(totals.completed)
 
         avg_depth = (sum(solve_depths) / len(solve_depths)) if solve_depths else 0.0
         perfect = sum(perfect_flags)
-        step_acc = [c / t if t else 0.0 for c, t in zip(self.per_step_correct, self.per_step_totals)]
-        first_err_hist = Counter(self.first_error_step)
+        step_acc = [c / t if t else 0.0 for c, t in zip(totals.per_step_correct, totals.per_step_totals)]
+        first_err_hist = Counter(self._totals.first_error_step)
         avg_latency = (sum(self.latencies) / len(self.latencies)) if self.latencies else 0.0
 
         answered = n_correct + n_wrong
         coverage_overall = (answered / total_decisions) if total_decisions else 0.0
         selective_acc = (n_correct / answered) if answered else 0.0
         apa = ((n_correct + self.idk_weight * n_idk) / total_decisions) if total_decisions else 0.0
-        coverage_by_step = [((t - z) / t) if t else 0.0 for t, z in zip(self.per_step_totals, self.per_step_idk)]
+        coverage_by_step = [((t - z) / t) if t else 0.0
+                            for t, z in zip(totals.per_step_totals, totals.per_step_idk)]
 
-        parse_fail_rate = (self.parse_failures / total_decisions) if total_decisions else 0.0
+        parse_fail_rate = (self._totals.parse_failures / total_decisions) if total_decisions else 0.0
 
         # Step-position split: at t=1 the arms are identical by construction
         # (no history exists yet), so any history effect can only show at t>=2.
-        t1_total = self.per_step_totals[0] if self.per_step_totals else 0
-        t1_acc = (self.per_step_correct[0] / t1_total) if t1_total else 0.0
-        t2_correct = sum(self.per_step_correct[1:])
-        t2_total = sum(self.per_step_totals[1:])
+        t1_total = self._totals.per_step_totals[0] if self._totals.per_step_totals else 0
+        t1_acc = (self._totals.per_step_correct[0] / t1_total) if t1_total else 0.0
+        t2_correct = sum(self._totals.per_step_correct[1:])
+        t2_total = sum(self._totals.per_step_totals[1:])
         t2_acc = (t2_correct / t2_total) if t2_total else 0.0
 
         # Cycling: does the model re-pick moves / revisit states within an episode?
@@ -717,25 +766,7 @@ class StepByStepTest(BaseTest):
                 moves.append(mv)
                 states.append(st)
 
-        logger.info("Average oracle-optimal steps (TA): %.2f / %s", avg_depth, self.n_moves)
-        logger.info(f"Perfect Solves: {perfect}/{len(solve_depths)} "
-                    f"({(perfect/len(solve_depths))*100:.2f}%)" if solve_depths else "Perfect Solves: 0/0")
-        logger.info("Per-step accuracy: %s | Per-step Ns: %s",
-                    [round(x, 3) for x in step_acc], [int(t) for t in self.per_step_totals])
-        logger.info("Avg latency: %.1f ms", avg_latency*1000)
-        logger.info(
-            "Selective metrics — coverage=%.3f, selective_acc=%.3f, IDK=%d, APA(%.2f)=%.3f",
-            coverage_overall, selective_acc, n_idk, self.idk_weight, apa,
-        )
-        logger.info(
-            "Arm=%s — parse_fail_rate=%.3f | t=1 acc=%.3f (n=%d) | t>=2 acc=%.3f (n=%d) | "
-            "repeat_any=%d/%d, revisited_state=%d/%d",
-            "history" if self.history_enabled else "markov",
-            parse_fail_rate, t1_acc, t1_total, t2_acc, t2_total,
-            repeat_any, t2plus_decisions, revisited, t2plus_decisions,
-        )
-
-        self.save({
+        return {
             "scoring": "oracle-optimal move from the state actually reached",
             "exact_scramble_depth": True,
             "arm": "history" if self.history_enabled else "markov",
@@ -756,7 +787,7 @@ class StepByStepTest(BaseTest):
             "perfect_solves_ratio": perfect / max(1, len(solve_depths)),
             "step_accuracy": step_acc,
             "first_error_hist": dict(first_err_hist),
-            "confusion_matrix": {k: dict(v) for k, v in self.confusion.items()},
+            "confusion_matrix": {k: dict(v) for k, v in self._totals.confusion.items()},
             "avg_latency_ms": avg_latency * 1000,
             "num_samples": len(solve_depths),
             "requested_samples": num_samples,
@@ -779,7 +810,7 @@ class StepByStepTest(BaseTest):
                 "apa": apa,
                 "conf_threshold": self.idk_conf_threshold,
             },
-            "parse_failures": self.parse_failures,
+            "parse_failures": self._totals.parse_failures,
             "parse_fail_rate": parse_fail_rate,
             "step_position_split": {
                 "t1_accuracy": t1_acc,
@@ -796,4 +827,43 @@ class StepByStepTest(BaseTest):
                 "revisited_state_rate": (revisited / t2plus_decisions) if t2plus_decisions else 0.0,
             },
             "samples": all_sample_logs,
-        }, filename="step_by_step_history.json" if self.history_enabled else None)
+        }
+
+    # ----- Reporting -----
+
+    def summary(self, payload: Dict[str, Any], records: List[ItemRecord]) -> None:
+        solve_depths = self._totals.solve_depths
+        perfect = sum(self._totals.perfect_flags)
+        selective = payload["selective"]
+        split = payload["step_position_split"]
+        cycling = payload["cycling"]
+
+        self._logger.info(
+            "Average oracle-optimal steps (TA): %.2f / %s",
+            payload["average_solve_depth"], self.n_moves)
+        self._logger.info(f"Perfect Solves: {perfect}/{len(solve_depths)} "
+                          f"({(perfect/len(solve_depths))*100:.2f}%)"
+                          if solve_depths else "Perfect Solves: 0/0")
+        self._logger.info("Per-step accuracy: %s | Per-step Ns: %s",
+                          [round(x, 3) for x in payload["step_accuracy"]],
+                          [int(t) for t in self._totals.per_step_totals])
+        self._logger.info("Avg latency: %.1f ms", payload["avg_latency_ms"])
+        self._logger.info(
+            "Selective metrics - coverage=%.3f, selective_acc=%.3f, IDK=%d, APA(%.2f)=%.3f",
+            selective["coverage_overall"], selective["selective_accuracy"],
+            selective["n_idk"], self.idk_weight, payload["abstention"]["apa"],
+        )
+        self._logger.info(
+            "Arm=%s - parse_fail_rate=%.3f | t=1 acc=%.3f (n=%d) | t>=2 acc=%.3f (n=%d) | "
+            "repeat_any=%d/%d, revisited_state=%d/%d",
+            payload["arm"],
+            payload["parse_fail_rate"], split["t1_accuracy"], split["t1_n"],
+            split["t2plus_accuracy"], split["t2plus_n"],
+            cycling["repeat_any_move"], cycling["n_t2plus_decisions"],
+            cycling["revisited_state"], cycling["n_t2plus_decisions"],
+        )
+
+    # ----- Results -----
+
+    def result_filename(self) -> Optional[str]:
+        return "step_by_step_history.json" if self.history_enabled else None

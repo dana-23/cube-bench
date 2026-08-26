@@ -42,7 +42,11 @@ class BaseTest(ABC):
         self.n_moves = int(n_moves)
         self.verbose = bool(verbose)
         self.latencies: List[float] = []
-        self._logger = logging.getLogger(type(self).__module__)
+
+    @property
+    def _logger(self) -> logging.Logger:
+        """Log under the concrete evaluation's module, not this base module."""
+        return logging.getLogger(type(self).__module__)
 
     # ----- Run template -----
 
