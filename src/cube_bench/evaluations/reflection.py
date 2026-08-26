@@ -233,7 +233,7 @@ class ReflectionTest(BaseTest):
             per_item = per_item[:num_samples]
             # Reject cached drafts when seeded item generation has drifted.
             for r in per_item:
-                gold = solver._build_sample(r["id"])["correct_letter"]
+                gold = solver.build_item(r["id"])["correct_letter"]
                 if r["gold"] != gold:
                     raise ValueError(
                         f"Draft item {r['id']} gold={r['gold']} but regenerates as {gold}; "
@@ -271,7 +271,7 @@ class ReflectionTest(BaseTest):
         else:
             wrong, acc_bits, preds = solver.run(num_samples=num_samples)
             per_item = [
-                {"id": i, "pred": preds[i], "gold": solver._build_sample(i)["correct_letter"], "ok": int(acc_bits[i])}
+                {"id": i, "pred": preds[i], "gold": solver.build_item(i)["correct_letter"], "ok": int(acc_bits[i])}
                 for i in range(len(acc_bits))
             ]
             draft_source = "fresh"
@@ -338,7 +338,7 @@ class ReflectionTest(BaseTest):
         ref_tokens = ref_latency = 0
 
         for idx in tqdm(reflect_indices, desc=f"Reflect({self.reflection_type})"):
-            sample = solver._build_sample(idx)
+            sample = solver.build_item(idx)
 
             assert_wrong = self.assert_incorrect == "always" or (
                 self.assert_incorrect == "when_wrong" and not acc_bits[idx]
@@ -383,7 +383,7 @@ class ReflectionTest(BaseTest):
         for r in tqdm(reflections, desc="Reanswer"):
             idx = r["index"]
             reask = _reanswer_bundle(assert_wrong=r["asserted_incorrect"], mode=self.reanswer_mode)
-            sample = solver._build_sample(idx)
+            sample = solver.build_item(idx)
             reply, usage, dt_ms = self._ask_with_usage(
                 system_prompt=reask["system"],
                 user_prompt=reask["user"].format(

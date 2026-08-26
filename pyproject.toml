@@ -77,14 +77,6 @@ good-names = [
   "InternVL3_5Strategy", "_balanced_sample_ABCD",
 ]
 
-[tool.pylint.classes]
-# The reflection evaluation deliberately reuses SolveMovesTest's item builder;
-# these are friend calls inside one package, not reaching into a stranger.
-exclude-protected = [
-  "_asdict", "_fields", "_replace", "_source", "_make", "os._exit",
-  "_build_sample", "_build_prompts",
-]
-
 [tool.pylint.design]
 # Evaluation constructors are wide but keep most parameters keyword-only, so the
 # positional limit remains strict.
