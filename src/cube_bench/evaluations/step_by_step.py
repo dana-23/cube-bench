@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from tqdm import tqdm
 
 from cube_bench.core import BaseTest
+from cube_bench.core.results import append_jsonl, read_checkpoint
 from cube_bench.prompts.prompt_factory import PromptFactory
 from cube_bench.sim.cube_simulator import VirtualCube
 
@@ -598,23 +599,7 @@ class StepByStepTest(BaseTest):
 
     @staticmethod
     def _load_checkpoint(path: Path) -> Dict[int, Dict[str, Any]]:
-        results: Dict[int, Dict[str, Any]] = {}
-        if not path.exists():
-            return results
-        for line in path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-                result = rec["result"]
-                if "perfect_solve" not in result:
-                    logger.warning("Skipping checkpoint record from an incompatible schema")
-                    continue
-                results[int(rec["sample_id"])] = result
-            except Exception as e:  # tolerate a torn last line from a hard kill
-                logger.warning("Skipping malformed checkpoint line: %s", e)
-        return results
+        return read_checkpoint(path, "perfect_solve")
 
     def run(self, num_samples: int):
         desc = f"Step-by-step ({self.n_moves} moves)"
@@ -633,8 +618,8 @@ class StepByStepTest(BaseTest):
         def _record(idx: int, r: Dict[str, Any]) -> None:
             results[idx] = r
             if ckpt_path is not None:
-                with ckpt_lock, open(ckpt_path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps({"sample_id": idx, "result": r}) + "\n")
+                with ckpt_lock:
+                    append_jsonl(ckpt_path, {"sample_id": idx, "result": r})
 
         # Failed episodes remain absent from the checkpoint so a later run retries them.
         if todo:

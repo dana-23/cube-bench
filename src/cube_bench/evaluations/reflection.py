@@ -14,6 +14,9 @@ import yaml
 from tqdm import tqdm
 
 from cube_bench.core import BaseTest
+from cube_bench.core.results import (
+    read_jsonl, timestamped_run_dir, write_json, write_jsonl,
+)
 from cube_bench.evaluations.solve_moves import SolveMovesTest
 
 logger = logging.getLogger(__name__)
@@ -96,21 +99,10 @@ def _count_tokens(usage: Dict[str, Any]) -> int:
     return s
 
 
-def _save_jsonl(path: Path, rows: List[Dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        for r in rows:
-            f.write(json.dumps(r, ensure_ascii=False) + "\n")
-
-
-def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
-    return [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
-
-
 def _draft_from_reflection_dir(run_dir: Path) -> List[Dict[str, Any]]:
     """Recover legacy draft data by joining reflection and re-answer JSONL files."""
-    refl = _read_jsonl(run_dir / "reflections.jsonl")
-    gold = {r["index"]: r.get("gold") for r in _read_jsonl(run_dir / "reanswers.jsonl")}
+    refl = read_jsonl(run_dir / "reflections.jsonl")
+    gold = {r["index"]: r.get("gold") for r in read_jsonl(run_dir / "reanswers.jsonl")}
     return sorted(
         (
             {
@@ -187,10 +179,7 @@ class ReflectionTest(BaseTest):
         self.results_root = Path(config.results_dir) / results_subdir
 
     def _make_run_dir(self, model_name: str) -> Path:
-        ts = time.strftime("%Y%m%d_%H%M%S")
-        out = self.results_root / f"{model_name}_{self.reflection_type}_{ts}"
-        out.mkdir(parents=True, exist_ok=True)
-        return out
+        return timestamped_run_dir(self.results_root, model_name, self.reflection_type)
 
     def _ask_with_usage(
         self,
@@ -289,9 +278,9 @@ class ReflectionTest(BaseTest):
             n_draft_unparsed = sum(1 for p in preds if p is None)
 
         # Persist the draft so sibling arms share the same initially-correct set.
-        (out_dir / "draft.json").write_text(
-            json.dumps({"source": draft_source, "num_samples": num_samples, "per_item": per_item}, indent=2),
-            encoding="utf-8",
+        write_json(
+            out_dir / "draft.json",
+            {"source": draft_source, "num_samples": num_samples, "per_item": per_item},
         )
 
         n_items = len(acc_bits)
@@ -335,7 +324,7 @@ class ReflectionTest(BaseTest):
                 "run_dir": str(out_dir),
                 "notes": "No items to reflect.",
             }
-            (out_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+            write_json(out_dir / "summary.json", summary)
             logger.info("[Reflection] nothing to reflect; InitAcc=%.3f", init_acc)
             return summary
 
@@ -385,7 +374,7 @@ class ReflectionTest(BaseTest):
                 "usage": usage,
             })
 
-        _save_jsonl(out_dir / "reflections.jsonl", reflections)
+        write_jsonl(out_dir / "reflections.jsonl", reflections)
 
         # 3) Re-answer pass
         reanswers: List[Dict[str, Any]] = []
@@ -422,7 +411,7 @@ class ReflectionTest(BaseTest):
                 "parsed": pred in {"A", "B", "C", "D"},
             })
 
-        _save_jsonl(out_dir / "reanswers.jsonl", reanswers)
+        write_jsonl(out_dir / "reanswers.jsonl", reanswers)
 
         # 4) Metrics
         before = {i: int(acc_bits[i]) for i in all_indices}
@@ -505,7 +494,7 @@ class ReflectionTest(BaseTest):
             "run_dir": str(out_dir),
         }
 
-        (out_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        write_json(out_dir / "summary.json", summary)
 
         if self.reflect_all:
             logger.info(
