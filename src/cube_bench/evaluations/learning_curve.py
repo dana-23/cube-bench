@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import logging
 import random
-import statistics
-from collections import Counter, deque
+from collections import deque
 from typing import Any, Deque, Dict, List, Optional
 
 import matplotlib
@@ -15,6 +14,7 @@ matplotlib.use("Agg")  # headless-safe; must precede any pyplot import
 # pylint: disable=wrong-import-position
 from matplotlib import pyplot as plt
 
+from cube_bench.core import scoring
 from cube_bench.core import ItemRecord, BaseTest
 from cube_bench.prompts.prompt_factory import PromptFactory
 from cube_bench.sim.cube_simulator import VirtualCube
@@ -45,21 +45,10 @@ class LearningCurveTest(BaseTest):
         self.accept_progress = bool(accept_progress)
         self._sys_rng: random.Random = random.SystemRandom()
 
-        self._attempts_needed: List[int] = []
-        self._solved_flags: List[bool] = []
-        self._pre_fail_reasons: List[str] = []
-        self._total_scrambles = 0
-        self._episodes_with_failure = 0
-
     def desc(self) -> str:
         return f"Learning-curve ({self.n_moves} moves)"
 
     def setup(self, num_samples: int) -> None:
-        self._attempts_needed = []
-        self._solved_flags = []
-        self._pre_fail_reasons = []
-        self._total_scrambles = 0
-        self._episodes_with_failure = 0
         self._vlog(
             f"[start] test={self.test_type} model={self.assistant.get_name()} "
             f"samples={num_samples} depth={self.n_moves} max_attempts={self.max_attempts} "
@@ -100,7 +89,6 @@ class LearningCurveTest(BaseTest):
     # ----- Episode -----
 
     def run_item(self, idx: int) -> Optional[ItemRecord]:
-        self._total_scrambles += 1
         cube = VirtualCube()
         scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves, exact_depth=True)
         plan: Deque[str] = deque(self.teacher_path(scramble))
@@ -127,18 +115,18 @@ class LearningCurveTest(BaseTest):
         return ItemRecord(
             index=idx,
             correct=solved,
+            saved={
+                "index": idx,
+                "attempts": attempts,
+                "solved": solved,
+                "failure_reason": failure_reason or "unknown",
+            },
             extra={
                 "attempts": attempts,
                 "solved": solved,
                 "failure_reason": failure_reason or "unknown",
             },
         )
-
-    def accumulate(self, record: ItemRecord) -> None:
-        self._episodes_with_failure += 1
-        self._pre_fail_reasons.append(record.extra["failure_reason"])
-        self._attempts_needed.append(record.extra["attempts"])
-        self._solved_flags.append(record.extra["solved"])
 
     def _pre_phase(self, cube: VirtualCube, plan: Deque[str], idx: int):
         """Run the closed loop until the model's first non-optimal move."""
@@ -261,64 +249,19 @@ class LearningCurveTest(BaseTest):
     # ----- Aggregation -----
 
     def aggregate(self, records: List[ItemRecord], num_samples: int) -> Dict[str, Any]:
-        attempts_needed = self._attempts_needed
-        solved_flags = self._solved_flags
-        pre_fail_reasons = self._pre_fail_reasons
-        total_scrambles = self._total_scrambles
-        episodes_with_failure = self._episodes_with_failure
-
-        # Aggregate only episodes that reached the post-error phase.
-        n = len(attempts_needed)
-        if n == 0:
-            success_rate = 0.0
-            ci_lo = ci_hi = 0.0
-            solved_n = 0
-            counts: Counter[int] = Counter()
-            p1 = 0.0
-            p_le_3 = 0.0
-            med_at_solved: Optional[float] = None
-            avg_attempts_all_maxed = 0.0
-            avg_attempts_all = 0.0
-            xs = list(range(1, self.max_attempts + 1))
-            ys = [0 for _ in xs]
-        else:
-            solved_n = int(sum(solved_flags))
-            success_rate = solved_n / n
-            counts = Counter([a for a, s in zip(attempts_needed, solved_flags) if s])
-            xs = list(range(1, self.max_attempts + 1))
-            ys = [counts.get(k, 0) for k in xs]
-            ci_lo, ci_hi = self.wilson_ci(success_rate, n)
-            p1 = counts.get(1, 0) / n
-            kmax = min(3, self.max_attempts)
-            p_le_3 = sum(counts.get(k, 0) for k in range(1, kmax + 1)) / n
-            solved_attempts = [a for a, s in zip(attempts_needed, solved_flags) if s]
-            med_at_solved = statistics.median(solved_attempts) if solved_attempts else None
-            avg_attempts_all_maxed = sum(
-                (a if s else self.max_attempts) for a, s in zip(attempts_needed, solved_flags)
-            ) / n
-            avg_attempts_all = sum(attempts_needed) / n
-
-        fig_path = self._write_histogram(xs, ys, n, solved_n, success_rate)
+        scored = scoring.score(self.test_type, records, context={"max_attempts": self.max_attempts})
+        xs = list(range(1, self.max_attempts + 1))
+        ys = [scored["hist_counts"].get(k, 0) for k in xs]
+        fig_path = self._write_histogram(xs, ys, scored["n"], scored["solved_n"], scored["success_rate"])
 
         return {
             "n_moves": self.n_moves,
             "max_attempts": self.max_attempts,
             "accept_progress": self.accept_progress,
-            "total_scrambles": total_scrambles,
-            "episodes_with_failure": episodes_with_failure,
-            "pre_fail_reasons": pre_fail_reasons,
-            "attempts_needed": attempts_needed,
-            "solved_flags": solved_flags,
-            "n": n,
-            "solved_n": solved_n,
-            "success_rate": success_rate,
-            "sr_ci95": [ci_lo, ci_hi],
-            "p1": p1,
-            "p_le_3": p_le_3,
-            "med_at_solved": med_at_solved,
-            "avg_attempts_all_maxed": avg_attempts_all_maxed,
-            "avg_attempts_all": avg_attempts_all,
-            "hist_counts": {int(k): int(v) for k, v in counts.items()},
+            "total_scrambles": num_samples,
+            "episodes_with_failure": len(records),
+            **scored,
+            "per_item": [record.saved for record in records],
             "plot_path": str(fig_path),
         }
 

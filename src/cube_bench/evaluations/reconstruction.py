@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import logging
-import random
 import re
 from collections import Counter
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from cube_bench.core import ItemRecord, SingleAskTest
 from cube_bench.prompts.prompt_factory import PromptFactory
+from cube_bench.core import scoring
 from cube_bench.sim.cube_simulator import VirtualCube
 
 logger = logging.getLogger(__name__)
@@ -60,9 +60,9 @@ class ReconstructionTest(SingleAskTest):
         self._user_prompt = ""
         self._total = 0
         self._max_count = self.MAX_SINGLE_COLOR_COUNT
-        self._parse_total = 0
-        self._elem_acc: List[float] = []
-        self._full_acc: List[float] = []
+        self._seen = 0
+        self._running_elem = 0.0
+        self._running_overall = 0.0
         self._color_counts: Counter = Counter()
         self._total_stickers = 0
 
@@ -73,13 +73,14 @@ class ReconstructionTest(SingleAskTest):
         return range(1, max(0, int(num_samples)) + 1)
 
     def setup(self, num_samples: int) -> None:
-        self._enable_verbose_logging_if_requested()
+        if self.verbose:
+            logger.setLevel(logging.DEBUG)
         self._sys_prompt, self._user_prompt = PromptFactory.get("reconstruction")
         self._total = max(0, int(num_samples))
         self._max_count = 9 if self.n_moves < 3 else 6
-        self._parse_total = 0
-        self._elem_acc = []
-        self._full_acc = []
+        self._seen = 0
+        self._running_elem = 0.0
+        self._running_overall = 0.0
         self._color_counts = Counter()
         self._total_stickers = 0
         self._logger.info(
@@ -88,10 +89,6 @@ class ReconstructionTest(SingleAskTest):
             self.n_moves,
             self.assistant.get_name(),
         )
-
-    def _enable_verbose_logging_if_requested(self) -> None:
-        if self.verbose:
-            logger.setLevel(logging.DEBUG)
 
     # ----- Item generation -----
 
@@ -106,15 +103,11 @@ class ReconstructionTest(SingleAskTest):
         while not valid_scramble:
             cube.reset()
             current_seed = idx if attempt == 0 else (idx * 10000 + attempt)
-            try:
-                scramble = cube.scramble(
-                    random_seed=current_seed,
-                    n_moves=self.n_moves,
-                    exact_depth=True,
-                )
-            except TypeError:
-                random.seed(current_seed)
-                scramble = cube.scramble(n_moves=self.n_moves)
+            scramble = cube.scramble(
+                random_seed=current_seed,
+                n_moves=self.n_moves,
+                exact_depth=True,
+            )
 
             gt = cube.front_face()
             flat_face = []
@@ -250,52 +243,60 @@ class ReconstructionTest(SingleAskTest):
             correct=overall == 1.0,
             parsed=prediction is not None,
             response=response,
+            saved={
+                "index": item["index"],
+                "gold": item["gt"],
+                "pred": prediction,
+                "elementwise": elementwise,
+                "overall": overall,
+                "response": response,
+            },
             extra={"elementwise": elementwise, "overall": overall},
         )
 
     def accumulate(self, record: ItemRecord) -> None:
-        if record.parsed:
-            self._parse_total += 1
-        self._elem_acc.append(record.extra["elementwise"])
-        self._full_acc.append(record.extra["overall"])
+        self._seen += 1
+        self._running_elem += record.extra["elementwise"]
+        self._running_overall += record.extra["overall"]
 
         idx = record.index
         if (idx % self.LOG_EVERY == 0) or (idx == self._total):
             self._logger.info(
                 "Reconstruction %d/%d - running avg (elem: %.3f, overall: %.3f)",
                 idx, self._total,
-                (sum(self._elem_acc) / len(self._elem_acc)) if self._elem_acc else 0.0,
-                (sum(self._full_acc) / len(self._full_acc)) if self._full_acc else 0.0,
+                self._running_elem / self._seen,
+                self._running_overall / self._seen,
             )
 
     # ----- Aggregation -----
 
     def aggregate(self, records: List[ItemRecord], num_samples: int) -> Dict[str, Any]:
-        if self._total_stickers > 0:
-            expected_freq = 1.0 / 6.0
-            max_dev = 0.0
-            self._logger.info("--- Fairness Check (Prior Deviation) ---")
-            for color in ["W", "Y", "R", "O", "G", "B"]:
-                count = self._color_counts[color]
-                freq = count / self._total_stickers
-                dev = abs(freq - expected_freq)
-                max_dev = max(max_dev, dev)
-                self._logger.info("Color %s: %s (%.4f) | Dev: %.4f", color, count, freq, dev)
-            self._logger.info("Max Deviation: %.4f (Target < 0.05)", max_dev)
-        else:
-            max_dev = 0.0
-
-        avg_ew = (sum(self._elem_acc) / len(self._elem_acc)) if self._elem_acc else 0.0
-        avg_ov = (sum(self._full_acc) / len(self._full_acc)) if self._full_acc else 0.0
-
+        scored = scoring.score(self.test_type, records)
         return {
-            "average_accuracy_element_wise": avg_ew,
-            "average_accuracy_overall": avg_ov,
+            "average_accuracy_element_wise": scored["average_accuracy_element_wise"],
+            "average_accuracy_overall": scored["average_accuracy_overall"],
             "num_samples": self._total,
             "n_moves": self.n_moves,
-            "correct_parse": self._parse_total,
-            "max_prior_deviation": max_dev,
+            "correct_parse": scored["correct_parse"],
+            "max_prior_deviation": self._color_prior_deviation(),
+            "per_item": [record.saved for record in records],
         }
+
+    def _color_prior_deviation(self) -> float:
+        """Largest deviation of the rendered colour mix from uniform, measured and reported per run."""
+        if self._total_stickers <= 0:
+            return 0.0
+        expected_freq = 1.0 / 6.0
+        deviations = []
+        self._logger.info("--- Fairness Check (Prior Deviation) ---")
+        for color in ["W", "Y", "R", "O", "G", "B"]:
+            count = self._color_counts[color]
+            freq = count / self._total_stickers
+            deviations.append(abs(freq - expected_freq))
+            self._logger.info("Color %s: %s (%.4f) | Dev: %.4f", color, count, freq, deviations[-1])
+        max_dev = max(deviations)
+        self._logger.info("Max Deviation: %.4f (Target < 0.05)", max_dev)
+        return max_dev
 
     # ----- Results -----
 

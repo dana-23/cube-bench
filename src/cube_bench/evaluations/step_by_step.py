@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from tqdm import tqdm
 
+from cube_bench.core import scoring
 from cube_bench.core import ItemRecord, BaseTest
 from cube_bench.core.results import append_jsonl, read_checkpoint
 from cube_bench.prompts.prompt_factory import PromptFactory
@@ -61,9 +62,6 @@ class _StepOutcome:
     teacher_plan: List[str]
     continue_episode: bool
     oracle_correct: bool = False
-    wrong: bool = False
-    abstained: bool = False
-    parse_failure: bool = False
     teacher_help: bool = False
     confusion_pair: Optional[Tuple[str, str]] = None
     latency: Optional[float] = None
@@ -74,29 +72,18 @@ class _RunTotals:
     """Episode results merged in seed order, independent of execution order."""
 
     per_step_totals: List[int] = field(default_factory=list)
-    per_step_correct: List[int] = field(default_factory=list)
-    per_step_idk: List[int] = field(default_factory=list)
     first_error_step: List[int] = field(default_factory=list)
     confusion: Dict[str, Counter] = field(default_factory=lambda: defaultdict(Counter))
-    parse_failures: int = 0
     solve_depths: List[int] = field(default_factory=list)
     perfect_flags: List[bool] = field(default_factory=list)
     sample_logs: List[Dict[str, Any]] = field(default_factory=list)
-    n_correct: int = 0
-    n_wrong: int = 0
-    n_idk: int = 0
-    total_decisions: int = 0
     missing: List[int] = field(default_factory=list)
     completed: int = 0
 
     @classmethod
     def for_depth(cls, n_moves: int) -> "_RunTotals":
         """Totals with the per-step vectors sized for a ``n_moves``-deep episode."""
-        return cls(
-            per_step_totals=[0] * n_moves,
-            per_step_correct=[0] * n_moves,
-            per_step_idk=[0] * n_moves,
-        )
+        return cls(per_step_totals=[0] * n_moves)
 
 
 class StepByStepTest(BaseTest):
@@ -425,7 +412,6 @@ class StepByStepTest(BaseTest):
                 ),
                 teacher_plan=context.teacher_plan,
                 continue_episode=False,
-                parse_failure=True,
                 latency=prediction.latency,
             )
 
@@ -446,7 +432,6 @@ class StepByStepTest(BaseTest):
                 ),
                 teacher_plan=context.teacher_plan,
                 continue_episode=teacher_help,
-                abstained=True,
                 teacher_help=teacher_help,
                 latency=prediction.latency,
             )
@@ -488,7 +473,6 @@ class StepByStepTest(BaseTest):
             teacher_plan=teacher_plan,
             continue_episode=oracle_correct,
             oracle_correct=oracle_correct,
-            wrong=not oracle_correct,
             confusion_pair=(context.teacher_move, chosen_move) if chosen_move else None,
             latency=prediction.latency,
         )
@@ -530,13 +514,8 @@ class StepByStepTest(BaseTest):
         # Episode transcript for the history arm: alternating turns per prior step.
         convo: List[Dict[str, Any]] = []
         per_step_totals = [0] * self.n_moves
-        per_step_correct = [0] * self.n_moves
-        per_step_idk = [0] * self.n_moves
         confusion_pairs: List[Tuple[str, str]] = []
         latencies: List[float] = []
-        n_correct = n_wrong = n_idk = 0
-        total_decisions = 0
-        parse_failures = 0
         first_error_step: Optional[int] = None
 
         for step_i in range(self.n_moves):
@@ -546,16 +525,9 @@ class StepByStepTest(BaseTest):
             outcome = self._run_step(cube, teacher_plan, idx, step_i, convo)
             teacher_plan = outcome.teacher_plan
             sample_log["steps_data"].append(outcome.step_log)
-            total_decisions += 1
             per_step_totals[step_i] += 1
-            per_step_correct[step_i] += int(outcome.oracle_correct)
-            per_step_idk[step_i] += int(outcome.abstained)
             correct_steps += int(outcome.oracle_correct)
             teacher_help += int(outcome.teacher_help)
-            n_correct += int(outcome.oracle_correct)
-            n_wrong += int(outcome.wrong)
-            n_idk += int(outcome.abstained)
-            parse_failures += int(outcome.parse_failure)
             if outcome.confusion_pair:
                 confusion_pairs.append(outcome.confusion_pair)
             if outcome.latency is not None:
@@ -573,15 +545,8 @@ class StepByStepTest(BaseTest):
             "correct_steps": correct_steps,
             "perfect_solve": solved and correct_steps == self.n_moves and teacher_help == 0,
             "per_step_totals": per_step_totals,
-            "per_step_correct": per_step_correct,
-            "per_step_idk": per_step_idk,
             "confusion_pairs": confusion_pairs,
             "latencies": latencies,
-            "n_correct": n_correct,
-            "n_wrong": n_wrong,
-            "n_idk": n_idk,
-            "total_decisions": total_decisions,
-            "parse_failures": parse_failures,
             "first_error_step": first_error_step,
         }
 
@@ -702,18 +667,11 @@ class StepByStepTest(BaseTest):
         self._totals.perfect_flags.append(bool(r["perfect_solve"]))
         for i in range(self.n_moves):
             self._totals.per_step_totals[i] += r["per_step_totals"][i]
-            self._totals.per_step_correct[i] += r["per_step_correct"][i]
-            self._totals.per_step_idk[i] += r["per_step_idk"][i]
         for tm, om in r["confusion_pairs"]:
             self._totals.confusion[tm][om] += 1
         self.latencies.extend(r["latencies"])
         if r["first_error_step"] is not None:
             self._totals.first_error_step.append(r["first_error_step"])
-        self._totals.parse_failures += r["parse_failures"]
-        self._totals.n_correct += r["n_correct"]
-        self._totals.n_wrong += r["n_wrong"]
-        self._totals.n_idk += r["n_idk"]
-        self._totals.total_decisions += r["total_decisions"]
 
     # ----- Aggregation -----
 
@@ -722,32 +680,18 @@ class StepByStepTest(BaseTest):
         solve_depths = totals.solve_depths
         perfect_flags = totals.perfect_flags
         all_sample_logs = totals.sample_logs
-        n_correct, n_wrong = totals.n_correct, totals.n_wrong
-        n_idk, total_decisions = totals.n_idk, totals.total_decisions
         missing, done = totals.missing, range(totals.completed)
+
+        scored = scoring.score(
+            self.test_type,
+            records,
+            context={"steps": self.n_moves, "idk_weight": self.idk_weight},
+        )
 
         avg_depth = (sum(solve_depths) / len(solve_depths)) if solve_depths else 0.0
         perfect = sum(perfect_flags)
-        step_acc = [c / t if t else 0.0 for c, t in zip(totals.per_step_correct, totals.per_step_totals)]
         first_err_hist = Counter(self._totals.first_error_step)
         avg_latency = (sum(self.latencies) / len(self.latencies)) if self.latencies else 0.0
-
-        answered = n_correct + n_wrong
-        coverage_overall = (answered / total_decisions) if total_decisions else 0.0
-        selective_acc = (n_correct / answered) if answered else 0.0
-        apa = ((n_correct + self.idk_weight * n_idk) / total_decisions) if total_decisions else 0.0
-        coverage_by_step = [((t - z) / t) if t else 0.0
-                            for t, z in zip(totals.per_step_totals, totals.per_step_idk)]
-
-        parse_fail_rate = (self._totals.parse_failures / total_decisions) if total_decisions else 0.0
-
-        # Step-position split: at t=1 the arms are identical by construction
-        # (no history exists yet), so any history effect can only show at t>=2.
-        t1_total = self._totals.per_step_totals[0] if self._totals.per_step_totals else 0
-        t1_acc = (self._totals.per_step_correct[0] / t1_total) if t1_total else 0.0
-        t2_correct = sum(self._totals.per_step_correct[1:])
-        t2_total = sum(self._totals.per_step_totals[1:])
-        t2_acc = (t2_correct / t2_total) if t2_total else 0.0
 
         repeat_prev, repeat_any, revisited, t2plus_decisions = self._cycling_stats(
             all_sample_logs)
@@ -771,7 +715,7 @@ class StepByStepTest(BaseTest):
             "n_moves_scrambled": self.n_moves,
             "average_solve_depth": avg_depth,
             "perfect_solves_ratio": perfect / max(1, len(solve_depths)),
-            "step_accuracy": step_acc,
+            "step_accuracy": scored["step_accuracy"],
             "first_error_hist": dict(first_err_hist),
             "confusion_matrix": {k: dict(v) for k, v in self._totals.confusion.items()},
             "avg_latency_ms": avg_latency * 1000,
@@ -780,30 +724,17 @@ class StepByStepTest(BaseTest):
             "completed_samples": len(done),
             "missing_seeds": missing,
             "complete": not missing,
-            "selective": {
-                "coverage_overall": coverage_overall,
-                "coverage_by_step": coverage_by_step,
-                "selective_accuracy": selective_acc,
-                "n_correct": n_correct,
-                "n_wrong": n_wrong,
-                "n_idk": n_idk,
-                "total_decisions": total_decisions,
-            },
+            "selective": scored["selective"],
             "abstention": {
                 "enabled": self.idk_enabled,
                 "policy": self.idk_policy,
                 "idk_weight": self.idk_weight,
-                "apa": apa,
+                "apa": scored["apa"],
                 "conf_threshold": self.idk_conf_threshold,
             },
-            "parse_failures": self._totals.parse_failures,
-            "parse_fail_rate": parse_fail_rate,
-            "step_position_split": {
-                "t1_accuracy": t1_acc,
-                "t1_n": t1_total,
-                "t2plus_accuracy": t2_acc,
-                "t2plus_n": t2_total,
-            },
+            "parse_failures": scored["parse_failures"],
+            "parse_fail_rate": scored["parse_fail_rate"],
+            "step_position_split": scored["step_position_split"],
             "cycling": {
                 "repeat_prev_move": repeat_prev,
                 "repeat_any_move": repeat_any,

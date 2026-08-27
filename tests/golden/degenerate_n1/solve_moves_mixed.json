@@ -19,7 +19,8 @@
                     "D": "L2"
                 },
                 "scramble": "D2",
-                "ok": 0
+                "ok": 0,
+                "response": "<ANSWER> C </ANSWER>"
             }
         ],
         "meta": {

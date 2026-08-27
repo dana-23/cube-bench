@@ -276,7 +276,7 @@ class ReflectionTest(BaseTest):
             per_item = per_item[:num_samples]
             # Reject cached drafts when seeded item generation has drifted.
             for r in per_item:
-                gold = solver.build_item(r["id"])["correct_letter"]
+                gold = solver.correct_letter(r["id"])
                 if r["gold"] != gold:
                     raise ValueError(
                         f"Draft item {r['id']} gold={r['gold']} but regenerates as {gold}; "
@@ -314,7 +314,7 @@ class ReflectionTest(BaseTest):
         else:
             wrong, acc_bits, preds = solver.run(num_samples=num_samples)
             per_item = [
-                {"id": i, "pred": preds[i], "gold": solver.build_item(i)["correct_letter"], "ok": int(acc_bits[i])}
+                {"id": i, "pred": preds[i], "gold": solver.correct_letter(i), "ok": int(acc_bits[i])}
                 for i in range(len(acc_bits))
             ]
             draft_source = "fresh"

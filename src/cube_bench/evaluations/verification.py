@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
 from cube_bench.core import ItemRecord, SingleAskTest
-from cube_bench.core.metrics import balanced_accuracy
+from cube_bench.core import scoring
 from cube_bench.prompts.prompt_factory import PromptFactory
 from cube_bench.sim.cube_simulator import VirtualCube
 
@@ -47,26 +46,12 @@ class VerificationTest(SingleAskTest):
 
         self._sys_prompt = ""
         self._user_template = ""
-        self._parsed = 0
-        self._yes_preds = 0
-        self._tp = self._tn = self._fp = self._fn = 0
-        self._by_polarity: Dict[str, Dict[str, int]] = {}
-        self._by_template: Dict[str, Dict[str, int]] = {}
 
     def desc(self) -> str:
         return "Verification Test"
 
     def setup(self, num_samples: int) -> None:
         self._sys_prompt, self._user_template = PromptFactory.get("verification")
-        self._parsed = 0
-        self._yes_preds = 0
-        self._tp = self._tn = self._fp = self._fn = 0
-        self._by_polarity = defaultdict(
-            lambda: {"correct": 0, "total": 0, "tp": 0, "tn": 0, "pos": 0, "neg": 0}
-        )
-        self._by_template = defaultdict(
-            lambda: {"correct": 0, "total": 0, "Yes": 0, "No": 0}
-        )
 
     # ----- Item generation -----
 
@@ -139,6 +124,16 @@ class VerificationTest(SingleAskTest):
             correct=bool(ok),
             parsed=prediction is not None,
             response=response,
+            saved={
+                "index": item["index"],
+                "gold": item["expected"],
+                "pred": prediction,
+                "ok": ok,
+                "polarity": item["polarity"],
+                "template_id": item["template_id"],
+                "states_match": item["states_match"],
+                "response": response,
+            },
             extra={
                 "ok": ok,
                 "polarity": item["polarity"],
@@ -147,90 +142,15 @@ class VerificationTest(SingleAskTest):
             },
         )
 
-    def accumulate(self, record: ItemRecord) -> None:
-        ok = record.extra["ok"]
-        exp_yes = record.extra["expected"].lower() == "yes"
-        pol = self._by_polarity[record.extra["polarity"]]
-        tpl_stats = self._by_template[record.extra["template_id"]]
-        pol["total"] += 1
-        pol["pos" if exp_yes else "neg"] += 1
-        pol["correct"] += ok
-        tpl_stats["total"] += 1
-        tpl_stats["correct"] += ok
-        tpl_stats[record.extra["expected"]] += 1
-
-        if record.pred is not None:
-            self._parsed += 1
-            pred_yes = record.pred.lower() == "yes"
-            if pred_yes:
-                self._yes_preds += 1
-
-            if exp_yes and pred_yes:
-                self._tp += 1
-                pol["tp"] += 1
-            elif exp_yes and not pred_yes:
-                self._fn += 1
-            elif (not exp_yes) and (not pred_yes):
-                self._tn += 1
-                pol["tn"] += 1
-            else:
-                self._fp += 1
-
     # ----- Aggregation -----
 
     def aggregate(self, records: List[ItemRecord], num_samples: int) -> Dict[str, Any]:
-        accuracies = [record.extra["ok"] for record in records]
-        total = num_samples if num_samples else 1
-        avg_acc = (sum(accuracies) / total) if accuracies else 0.0
-
-        parse_rate = self._parsed / total
-        yes_rate = (self._yes_preds / self._parsed) if self._parsed else 0.0
-
-        pos = self._tp + self._fn
-        neg = self._tn + self._fp
-        bal_acc = balanced_accuracy(self._tp, self._tn, self._fp, self._fn)
-
-        polarity_metrics = {
-            name: {
-                "n": s["total"],
-                "accuracy": (s["correct"] / s["total"]) if s["total"] else 0.0,
-                "balanced_accuracy": 0.5 * (
-                    ((s["tp"] / s["pos"]) if s["pos"] else 0.0)
-                    + ((s["tn"] / s["neg"]) if s["neg"] else 0.0)
-                ),
-                "yes_label_share": (s["pos"] / s["total"]) if s["total"] else 0.0,
-            }
-            for name, s in self._by_polarity.items()
-        }
-        template_metrics = {
-            name: {
-                "n": s["total"],
-                "accuracy": (s["correct"] / s["total"]) if s["total"] else 0.0,
-                "yes_label_share": (s["Yes"] / s["total"]) if s["total"] else 0.0,
-            }
-            for name, s in self._by_template.items()
-        }
-        max_label_skew = max(
-            (abs(m["yes_label_share"] - 0.5) for m in template_metrics.values()),
-            default=0.0,
-        )
-
+        scored = scoring.score(self.test_type, records, total=num_samples or 1)
         return {
-            "average_accuracy": avg_acc,
+            "average_accuracy": scored["accuracy"],
             "num_samples": num_samples,
-            "metrics": {
-                "accuracy": avg_acc,
-                "balanced_accuracy": bal_acc,
-                "parse_rate": parse_rate,
-                "parse_violation": 1.0 - parse_rate,
-                "yes_rate": yes_rate,
-                "confusion": {"tp": self._tp, "tn": self._tn, "fp": self._fp, "fn": self._fn},
-                "unparsed": total - self._parsed,
-                "support": {"pos": pos, "neg": neg},
-                "by_polarity": polarity_metrics,
-                "by_template": template_metrics,
-                "max_template_label_skew": max_label_skew,
-            },
+            "metrics": scored,
+            "per_item": [record.saved for record in records],
             "meta": {
                 "generator": "VirtualCube",
                 "scramble_depth": self.n_moves,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import random
 from typing import Any, Dict, List, Optional, Tuple
 
+from cube_bench.core import scoring
 from cube_bench.core import ItemRecord, SingleAskTest
 from cube_bench.prompts.prompt_factory import PromptFactory
 from cube_bench.sim.cube_simulator import VirtualCube
@@ -22,24 +23,21 @@ class SolveMovesTest(SingleAskTest):
         super().__init__(assistant, config, n_moves, verbose)
         self.prompt_type = prompt_type
         self._num_samples = 0
-        self._parsed = 0
-        self._acc_bits: List[int] = []
-        self._preds: List[Optional[str]] = []
-        self._wrong_pairs: List[Tuple[str, int]] = []
+        self._seen = 0
+        self._correct = 0
 
     def desc(self) -> str:
         return "Solve move test"
 
     def setup(self, num_samples: int) -> None:
         self._num_samples = num_samples
-        self._parsed = 0
-        self._acc_bits = []
-        self._preds = []
-        self._wrong_pairs = []
+        self._seen = 0
+        self._correct = 0
 
     # ----- Item generation -----
 
-    def build_item(self, idx: int) -> Dict[str, Any]:
+    def _item_core(self, idx: int) -> Tuple[VirtualCube, Any, Dict[str, str], str, str]:
+        """Everything an item is made of except its rendering, which is the costly half."""
         cube = VirtualCube()
         scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves, exact_depth=True)
 
@@ -54,6 +52,14 @@ class SolveMovesTest(SingleAskTest):
         rng = random.Random(idx)
         forced = "ABCD"[idx % 4]
         options, gold_letter = self.gen_mcq(teacher_move, rng, force_letter=forced)
+        return cube, scramble, options, gold_letter, teacher_move
+
+    def correct_letter(self, idx: int) -> str:
+        """The gold letter for an item, without paying to render it."""
+        return self._item_core(idx)[3]
+
+    def build_item(self, idx: int) -> Dict[str, Any]:
+        cube, scramble, options, gold_letter, teacher_move = self._item_core(idx)
 
         return {
             "id": idx,
@@ -101,39 +107,36 @@ class SolveMovesTest(SingleAskTest):
                 "options": item["options"],
                 "scramble": item["scramble"],
                 "ok": ok,
+                "response": response,
             },
             extra={"options": item["options"]},
         )
 
     def accumulate(self, record: ItemRecord) -> None:
         ok = record.saved["ok"]
-        self._acc_bits.append(ok)
-        self._preds.append(record.pred)
-        if record.pred:
-            self._parsed += 1
+        self._seen += 1
+        self._correct += ok
 
         if not ok:
-            self._wrong_pairs.append((record.pred, record.index))
             self._vlog(
                 "Wrong #%d: pred=%s gold=%s options=%s scramble=%s",
                 record.index, record.pred, record.gold,
                 record.extra["options"], record.saved["scramble"],
             )
 
-        done = len(self._acc_bits)
-        if self.verbose and done % 10 == 0:
+        if self.verbose and self._seen % 10 == 0:
             self._vlog(
                 "Progress: %d/%d (acc=%.3f)",
-                done, self._num_samples, sum(self._acc_bits) / done,
+                self._seen, self._num_samples, self._correct / self._seen,
             )
 
     # ----- Aggregation -----
 
     def aggregate(self, records: List[ItemRecord], num_samples: int) -> Dict[str, Any]:
-        avg_acc = (sum(self._acc_bits) / len(self._acc_bits)) if self._acc_bits else 0.0
+        scored = scoring.score(self.test_type, records)
         return {
             "prompt_type": self.prompt_type,
-            "average_accuracy": avg_acc,
+            "average_accuracy": scored["average_accuracy"],
             "num_samples": num_samples,
             "per_item": [record.saved for record in records],
             "meta": {
@@ -150,8 +153,9 @@ class SolveMovesTest(SingleAskTest):
         self._logger.info(
             "SolveMoves avg accuracy (%s): %.3f", self.prompt_type, payload["average_accuracy"]
         )
+        parsed = sum(1 for record in records if record.pred)
         self._logger.info(
-            "Parsed rate: %s", (self._parsed / num_samples) * 100 if num_samples else 0.0
+            "Parsed rate: %s", (parsed / num_samples) * 100 if num_samples else 0.0
         )
 
     # ----- Results -----
@@ -160,4 +164,6 @@ class SolveMovesTest(SingleAskTest):
         return f"solve_moves_{self.prompt_type}.json"
 
     def result(self, payload: Dict[str, Any], records: List[ItemRecord]):
-        return self._wrong_pairs, self._acc_bits, self._preds
+        wrong_pairs = [(r.pred, r.index) for r in records if not r.saved["ok"]]
+        acc_bits = [r.saved["ok"] for r in records]
+        return wrong_pairs, acc_bits, [r.pred for r in records]

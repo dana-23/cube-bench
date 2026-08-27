@@ -19,7 +19,8 @@
                     "D": "U2"
                 },
                 "scramble": "D2 B' U'",
-                "ok": 0
+                "ok": 0,
+                "response": "<ANSWER> D </ANSWER>"
             },
             {
                 "id": 1,
@@ -33,7 +34,8 @@
                     "D": "F"
                 },
                 "scramble": "U' D' L2",
-                "ok": 1
+                "ok": 1,
+                "response": "<ANSWER> B </ANSWER>"
             },
             {
                 "id": 2,
@@ -47,7 +49,8 @@
                     "D": "U"
                 },
                 "scramble": "D2 F L",
-                "ok": 0
+                "ok": 0,
+                "response": "<ANSWER> A </ANSWER>"
             },
             {
                 "id": 3,
@@ -61,7 +64,8 @@
                     "C": "B"
                 },
                 "scramble": "U2 L D",
-                "ok": 1
+                "ok": 1,
+                "response": "<ANSWER> D </ANSWER>"
             },
             {
                 "id": 4,
@@ -75,7 +79,8 @@
                     "D": "L"
                 },
                 "scramble": "L2 B2 D2",
-                "ok": 0
+                "ok": 0,
+                "response": "<ANSWER> B </ANSWER>"
             },
             {
                 "id": 5,
@@ -89,7 +94,8 @@
                     "D": "L2"
                 },
                 "scramble": "R2 D2 R",
-                "ok": 0
+                "ok": 0,
+                "response": "<ANSWER> D </ANSWER>"
             },
             {
                 "id": 6,
@@ -103,7 +109,8 @@
                     "D": "F2"
                 },
                 "scramble": "U' F' U'",
-                "ok": 0
+                "ok": 0,
+                "response": "<ANSWER> D </ANSWER>"
             },
             {
                 "id": 7,
@@ -117,7 +124,8 @@
                     "C": "R'"
                 },
                 "scramble": "B2 F' R2",
-                "ok": 0
+                "ok": 0,
+                "response": "<ANSWER> A </ANSWER>"
             }
         ],
         "meta": {

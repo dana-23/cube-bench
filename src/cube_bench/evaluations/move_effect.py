@@ -8,9 +8,8 @@ from collections import Counter, defaultdict, deque
 from typing import Any, Dict, List, Optional, Tuple
 
 from cube_bench.core import ItemRecord, SingleAskTest
-from cube_bench.core.metrics import (
-    cohens_kappa, dot, jensen_shannon, macro_f1, per_class_prf, safe_prop,
-)
+from cube_bench.core import scoring
+from cube_bench.core.metrics import jensen_shannon, safe_prop
 from cube_bench.sim.cube_simulator import VirtualCube
 
 
@@ -32,8 +31,6 @@ class MoveEffectTest(SingleAskTest):
         super().__init__(assistant, config, n_moves, verbose)
 
         # Fairness state.
-        self.double_cycle = ["INCREASE", "NO_CHANGE", "DECREASE"]
-        self.double_idx = 0
         self.double_slot_cycle = deque(self.SLOTS)
 
         self.presented_counts = Counter({c: 0 for c in self.CLASSES})
@@ -49,25 +46,13 @@ class MoveEffectTest(SingleAskTest):
         self.depth_feasible2_counts = defaultdict(lambda: Counter({c: 0 for c in self.CLASSES}))
         self.alpha_smooth = 1.0
 
-        self._micro_correct = 0
-        self._total_labels = 0
-        self._confusion: Dict[str, Counter] = defaultdict(Counter)
-        self._per_class: Counter = Counter()
         self._option_mix_ok: Counter = Counter()
-        self._per_distance: Dict[int, Dict[str, int]] = defaultdict(
-            lambda: {"correct": 0, "total": 0}
-        )
 
     def desc(self) -> str:
         return f"Move-Effect (n_moves={self.n_moves})"
 
     def setup(self, num_samples: int) -> None:
-        self._micro_correct = 0
-        self._total_labels = 0
-        self._confusion = defaultdict(Counter)
-        self._per_class = Counter()
         self._option_mix_ok = Counter()
-        self._per_distance = defaultdict(lambda: {"correct": 0, "total": 0})
 
         self._logger.info("=" * 80)
         self._logger.info("Initializing Move-Effect test on %s", self.assistant.get_name())
@@ -135,17 +120,7 @@ class MoveEffectTest(SingleAskTest):
         desired_counts = {c: target[c] * total for c in self.CLASSES}
         deficits = {c: desired_counts[c] - counts.get(c, 0) for c in self.CLASSES}
 
-        best = None
-        best_val = -1e9
-        for c in feasible:
-            val = deficits.get(c, 0.0)
-            if val > best_val:
-                best = c
-                best_val = val
-        if best is not None:
-            return best
-
-        return feasible[self.double_idx % len(feasible)]
+        return max(feasible, key=lambda c: deficits.get(c, 0.0))
 
     def _assign_with_double_slot(self, picked: List[Tuple[str, str]], double_cls: str | None) -> Dict[str, str]:
         """Rotate the doubled class across slots, then balance the remaining assignments."""
@@ -225,10 +200,9 @@ class MoveEffectTest(SingleAskTest):
                     self.class_debt[target_double] += 1
 
         # Backfill from the most underrepresented available class.
+        desired_share = self._feasible_target_for_depth(d)
         while len(picked) < 4:
-            target = self._feasible_target_for_depth(d)
             total_here = sum(actual_counts.values()) or 1
-            desired_share = target
             def share(cls):
                 return actual_counts[cls] / total_here
             order = sorted(self.CLASSES, key=lambda c: desired_share[c] - share(c), reverse=True)
@@ -377,8 +351,16 @@ class MoveEffectTest(SingleAskTest):
         self, item: Dict[str, Any], prediction: Dict[str, str], response: Optional[str]
     ) -> ItemRecord:
         truth = item["truth"]
-        labels = [(k, truth[k], prediction.get(k, "MISSING")) for k in "ABCD"]
-        correct_this_item = sum(int(pred == gold) for _, gold, pred in labels)
+        labels = [
+            {
+                "option": k,
+                "gold": truth[k],
+                "pred": prediction.get(k, "MISSING"),
+                "distance": item["distance"],
+            }
+            for k in "ABCD"
+        ]
+        correct_this_item = sum(int(label["pred"] == label["gold"]) for label in labels)
 
         if self.verbose:
             predictions = {k: prediction.get(k) for k in 'ABCD'}
@@ -402,6 +384,15 @@ class MoveEffectTest(SingleAskTest):
             correct=correct_this_item == 4,
             parsed=len(prediction) == 4,
             response=response,
+            saved={
+                "index": item["index"],
+                "distance": item["distance"],
+                "scramble": str(item["scramble"]),
+                "options": {k: str(v) for k, v in item["options"].items()},
+                "labels": labels,
+                "correct_this_item": correct_this_item,
+                "response": response,
+            },
             extra={
                 "labels": labels,
                 "correct_this_item": correct_this_item,
@@ -409,83 +400,43 @@ class MoveEffectTest(SingleAskTest):
             },
         )
 
-    def accumulate(self, record: ItemRecord) -> None:
-        for _, gold, pred in record.extra["labels"]:
-            self._per_class[gold] += 1
-            self._confusion[gold][pred] += 1
-            is_right = int(pred == gold)
-            self._micro_correct += is_right
-            self._total_labels += 1
-
-        d = record.extra["distance"]
-        self._per_distance[d]["correct"] += record.extra["correct_this_item"]
-        self._per_distance[d]["total"] += 4
-
     # ----- Aggregation -----
 
     def aggregate(self, records: List[ItemRecord], num_samples: int) -> Dict[str, Any]:
-        micro_correct = self._micro_correct
-        total_labels = self._total_labels
-        confusion = self._confusion
-        per_class = self._per_class
-        option_mix_ok = self._option_mix_ok
-        per_distance = self._per_distance
-
-        # Aggregate accuracy and fairness metrics.
-        tot = sum(per_class.values())
-        tri = ("INCREASE", "NO_CHANGE", "DECREASE")
-        priors = {k: safe_prop(per_class[k], tot) for k in tri}
-
-        pred_totals = Counter()
-        for _gold, row in confusion.items():
-            for pred, c in row.items():
-                pred_totals[pred] += c
-        pred_tot = sum(pred_totals[k] for k in tri)
-        q = {k: (pred_totals[k] / pred_tot) if pred_tot else 0.0 for k in tri}
-
-        maj_baseline = max(priors.values()) if priors else 0.0
-        prior_sample_baseline = dot(priors, priors, tri)
-        model_expected = dot(priors, q, tri)
+        scored = scoring.score(self.test_type, records, total=num_samples)
+        tri = tuple(scoring.load_registry()[self.test_type]["classes"])
+        priors = scored["gold_priors"]
 
         self._logger.info("gold priors: %s", priors)
-        self._logger.info("model preds q: %s", q)
-        self._logger.info("baseline(always majority): %.3f  baseline(prior-sample): %.3f  exp(acc from q.priors): %.3f",
-                    maj_baseline, prior_sample_baseline, model_expected)
-        self._logger.info("option class coverage counts (distinct classes per item): %s", dict(option_mix_ok))
+        self._logger.info("model preds q: %s", scored["pred_mix"])
+        self._logger.info(
+            "baseline(always majority): %.3f  baseline(prior-sample): %.3f  exp(acc from q.priors): %.3f",
+            scored["maj_baseline"], scored["prior_sample_baseline"], scored["expected_dot"],
+        )
+        self._logger.info("option class coverage counts (distinct classes per item): %s", dict(self._option_mix_ok))
 
-        micro_acc = micro_correct / total_labels if total_labels else 0.0
-
-        kappa = cohens_kappa(micro_acc, model_expected)
-
-        per_class_precision, per_class_recall, per_class_f1 = per_class_prf(confusion, tri)
-        macro = macro_f1(per_class_f1, tri)
-
-        per_distance_acc = {int(d): (v["correct"] / v["total"]) for d, v in per_distance.items() if v["total"]}
-
-        fairness_metrics = self._fairness_metrics(priors, tri)
-
-        out = {
+        return {
             "n_moves": self.n_moves,
-            "micro_acc": micro_acc,
-            "macro_f1": macro,
-            "kappa": kappa,
-            "per_class_precision": per_class_precision,
-            "per_class_recall": per_class_recall,
-            "per_class_f1": per_class_f1,
-            "labels_total": total_labels,
-            "confusion": {g: dict(c) for g, c in confusion.items()},
-            "support": dict(per_class),
+            "micro_acc": scored["micro_acc"],
+            "macro_f1": scored["macro_f1"],
+            "kappa": scored["kappa"],
+            "per_class_precision": scored["per_class_precision"],
+            "per_class_recall": scored["per_class_recall"],
+            "per_class_f1": scored["per_class_f1"],
+            "labels_total": scored["labels_total"],
+            "confusion": scored["confusion"],
+            "support": scored["support"],
             "gold_priors": priors,
-            "pred_mix": q,
-            "expected_dot": model_expected,
-            "maj_baseline": maj_baseline,
-            "prior_sample_baseline": prior_sample_baseline,
-            "per_distance_micro_acc": per_distance_acc,
-            "option_coverage_counts": dict(option_mix_ok),
+            "pred_mix": scored["pred_mix"],
+            "expected_dot": scored["expected_dot"],
+            "maj_baseline": scored["maj_baseline"],
+            "prior_sample_baseline": scored["prior_sample_baseline"],
+            "per_distance_micro_acc": scored["per_distance_micro_acc"],
+            "option_coverage_counts": dict(self._option_mix_ok),
+            "per_item": [record.saved for record in records],
             "num_samples": num_samples,
-            "fairness_metrics": fairness_metrics,
+            "fairness_metrics": self._fairness_metrics(priors, tri),
         }
-        return out
 
     def _fairness_metrics(self, priors: Dict[str, float], tri) -> Dict[str, Any]:
         """Sampling-fairness diagnostics for the option mix actually presented."""

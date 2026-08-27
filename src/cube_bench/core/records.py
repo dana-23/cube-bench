@@ -21,6 +21,5 @@ class ItemRecord:
     correct: bool = False
     parsed: bool = False
     response: Optional[str] = None
-    latency: Optional[float] = None
     saved: Optional[Dict[str, Any]] = None
     extra: Dict[str, Any] = field(default_factory=dict)

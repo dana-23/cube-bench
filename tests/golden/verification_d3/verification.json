@@ -70,6 +70,248 @@
             },
             "max_template_label_skew": 0.0
         },
+        "per_item": [
+            {
+                "index": 0,
+                "gold": "Yes",
+                "pred": "Yes",
+                "ok": 1,
+                "polarity": "affirmative",
+                "template_id": "affirmative:0",
+                "states_match": true,
+                "response": "Answer: Yes"
+            },
+            {
+                "index": 1,
+                "gold": "No",
+                "pred": "No",
+                "ok": 1,
+                "polarity": "affirmative",
+                "template_id": "affirmative:0",
+                "states_match": false,
+                "response": "Answer: No"
+            },
+            {
+                "index": 2,
+                "gold": "No",
+                "pred": "No",
+                "ok": 1,
+                "polarity": "negated",
+                "template_id": "negated:0",
+                "states_match": true,
+                "response": "Answer: No"
+            },
+            {
+                "index": 3,
+                "gold": "Yes",
+                "pred": "Yes",
+                "ok": 1,
+                "polarity": "negated",
+                "template_id": "negated:0",
+                "states_match": false,
+                "response": "Answer: Yes"
+            },
+            {
+                "index": 4,
+                "gold": "Yes",
+                "pred": "No",
+                "ok": 0,
+                "polarity": "affirmative",
+                "template_id": "affirmative:1",
+                "states_match": true,
+                "response": "Answer: No"
+            },
+            {
+                "index": 5,
+                "gold": "No",
+                "pred": "Yes",
+                "ok": 0,
+                "polarity": "affirmative",
+                "template_id": "affirmative:1",
+                "states_match": false,
+                "response": "Answer: Yes"
+            },
+            {
+                "index": 6,
+                "gold": "No",
+                "pred": "No",
+                "ok": 1,
+                "polarity": "negated",
+                "template_id": "negated:1",
+                "states_match": true,
+                "response": "Answer: No"
+            },
+            {
+                "index": 7,
+                "gold": "Yes",
+                "pred": "No",
+                "ok": 0,
+                "polarity": "negated",
+                "template_id": "negated:1",
+                "states_match": false,
+                "response": "Answer: No"
+            },
+            {
+                "index": 8,
+                "gold": "Yes",
+                "pred": "No",
+                "ok": 0,
+                "polarity": "affirmative",
+                "template_id": "affirmative:2",
+                "states_match": true,
+                "response": "Answer: No"
+            },
+            {
+                "index": 9,
+                "gold": "No",
+                "pred": "No",
+                "ok": 1,
+                "polarity": "affirmative",
+                "template_id": "affirmative:2",
+                "states_match": false,
+                "response": "Answer: No"
+            },
+            {
+                "index": 10,
+                "gold": "No",
+                "pred": "Yes",
+                "ok": 0,
+                "polarity": "negated",
+                "template_id": "negated:2",
+                "states_match": true,
+                "response": "Answer: Yes"
+            },
+            {
+                "index": 11,
+                "gold": "Yes",
+                "pred": "No",
+                "ok": 0,
+                "polarity": "negated",
+                "template_id": "negated:2",
+                "states_match": false,
+                "response": "Answer: No"
+            },
+            {
+                "index": 12,
+                "gold": "Yes",
+                "pred": "No",
+                "ok": 0,
+                "polarity": "affirmative",
+                "template_id": "affirmative:0",
+                "states_match": true,
+                "response": "Answer: No"
+            },
+            {
+                "index": 13,
+                "gold": "No",
+                "pred": "Yes",
+                "ok": 0,
+                "polarity": "affirmative",
+                "template_id": "affirmative:0",
+                "states_match": false,
+                "response": "Answer: Yes"
+            },
+            {
+                "index": 14,
+                "gold": "No",
+                "pred": "Yes",
+                "ok": 0,
+                "polarity": "negated",
+                "template_id": "negated:0",
+                "states_match": true,
+                "response": "Answer: Yes"
+            },
+            {
+                "index": 15,
+                "gold": "Yes",
+                "pred": "No",
+                "ok": 0,
+                "polarity": "negated",
+                "template_id": "negated:0",
+                "states_match": false,
+                "response": "Answer: No"
+            },
+            {
+                "index": 16,
+                "gold": "Yes",
+                "pred": "Yes",
+                "ok": 1,
+                "polarity": "affirmative",
+                "template_id": "affirmative:1",
+                "states_match": true,
+                "response": "Answer: Yes"
+            },
+            {
+                "index": 17,
+                "gold": "No",
+                "pred": "Yes",
+                "ok": 0,
+                "polarity": "affirmative",
+                "template_id": "affirmative:1",
+                "states_match": false,
+                "response": "Answer: Yes"
+            },
+            {
+                "index": 18,
+                "gold": "No",
+                "pred": "Yes",
+                "ok": 0,
+                "polarity": "negated",
+                "template_id": "negated:1",
+                "states_match": true,
+                "response": "Answer: Yes"
+            },
+            {
+                "index": 19,
+                "gold": "Yes",
+                "pred": "Yes",
+                "ok": 1,
+                "polarity": "negated",
+                "template_id": "negated:1",
+                "states_match": false,
+                "response": "Answer: Yes"
+            },
+            {
+                "index": 20,
+                "gold": "Yes",
+                "pred": "Yes",
+                "ok": 1,
+                "polarity": "affirmative",
+                "template_id": "affirmative:2",
+                "states_match": true,
+                "response": "Answer: Yes"
+            },
+            {
+                "index": 21,
+                "gold": "No",
+                "pred": "No",
+                "ok": 1,
+                "polarity": "affirmative",
+                "template_id": "affirmative:2",
+                "states_match": false,
+                "response": "Answer: No"
+            },
+            {
+                "index": 22,
+                "gold": "No",
+                "pred": "No",
+                "ok": 1,
+                "polarity": "negated",
+                "template_id": "negated:2",
+                "states_match": true,
+                "response": "Answer: No"
+            },
+            {
+                "index": 23,
+                "gold": "Yes",
+                "pred": "No",
+                "ok": 0,
+                "polarity": "negated",
+                "template_id": "negated:2",
+                "states_match": false,
+                "response": "Answer: No"
+            }
+        ],
         "meta": {
             "generator": "VirtualCube",
             "scramble_depth": 3,

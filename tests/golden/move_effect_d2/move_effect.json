@@ -24,26 +24,26 @@
         },
         "labels_total": 32,
         "confusion": {
-            "NO_CHANGE": {
-                "INCREASE": 5,
-                "DECREASE": 2,
-                "NO_CHANGE": 5
-            },
-            "DECREASE": {
-                "INCREASE": 6,
-                "DECREASE": 1,
-                "NO_CHANGE": 2
-            },
             "INCREASE": {
                 "INCREASE": 4,
                 "NO_CHANGE": 3,
                 "DECREASE": 4
+            },
+            "NO_CHANGE": {
+                "INCREASE": 5,
+                "NO_CHANGE": 5,
+                "DECREASE": 2
+            },
+            "DECREASE": {
+                "INCREASE": 6,
+                "NO_CHANGE": 2,
+                "DECREASE": 1
             }
         },
         "support": {
+            "INCREASE": 11,
             "NO_CHANGE": 12,
-            "DECREASE": 9,
-            "INCREASE": 11
+            "DECREASE": 9
         },
         "gold_priors": {
             "INCREASE": 0.34375,
@@ -64,6 +64,320 @@
         "option_coverage_counts": {
             "3": 8
         },
+        "per_item": [
+            {
+                "index": 0,
+                "distance": 2,
+                "scramble": "D2 B'",
+                "options": {
+                    "A": "B2",
+                    "B": "B",
+                    "C": "U2",
+                    "D": "B'"
+                },
+                "labels": [
+                    {
+                        "option": "A",
+                        "gold": "NO_CHANGE",
+                        "pred": "INCREASE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "B",
+                        "gold": "DECREASE",
+                        "pred": "INCREASE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "C",
+                        "gold": "INCREASE",
+                        "pred": "INCREASE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "D",
+                        "gold": "NO_CHANGE",
+                        "pred": "DECREASE",
+                        "distance": 2
+                    }
+                ],
+                "correct_this_item": 1,
+                "response": "<A> INCREASE </A>\n<B> INCREASE </B>\n<C> INCREASE </C>\n<D> DECREASE </D>"
+            },
+            {
+                "index": 1,
+                "distance": 2,
+                "scramble": "U' D'",
+                "options": {
+                    "B": "B",
+                    "A": "U",
+                    "C": "D2",
+                    "D": "F2"
+                },
+                "labels": [
+                    {
+                        "option": "A",
+                        "gold": "DECREASE",
+                        "pred": "INCREASE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "B",
+                        "gold": "INCREASE",
+                        "pred": "INCREASE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "C",
+                        "gold": "NO_CHANGE",
+                        "pred": "INCREASE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "D",
+                        "gold": "INCREASE",
+                        "pred": "NO_CHANGE",
+                        "distance": 2
+                    }
+                ],
+                "correct_this_item": 1,
+                "response": "<A> INCREASE </A>\n<B> INCREASE </B>\n<C> INCREASE </C>\n<D> NO_CHANGE </D>"
+            },
+            {
+                "index": 2,
+                "distance": 2,
+                "scramble": "D2 F",
+                "options": {
+                    "C": "F2",
+                    "D": "F'",
+                    "A": "L2",
+                    "B": "F"
+                },
+                "labels": [
+                    {
+                        "option": "A",
+                        "gold": "INCREASE",
+                        "pred": "DECREASE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "B",
+                        "gold": "NO_CHANGE",
+                        "pred": "NO_CHANGE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "C",
+                        "gold": "NO_CHANGE",
+                        "pred": "INCREASE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "D",
+                        "gold": "DECREASE",
+                        "pred": "DECREASE",
+                        "distance": 2
+                    }
+                ],
+                "correct_this_item": 2,
+                "response": "<A> DECREASE </A>\n<B> NO_CHANGE </B>\n<C> INCREASE </C>\n<D> DECREASE </D>"
+            },
+            {
+                "index": 3,
+                "distance": 2,
+                "scramble": "U2 L",
+                "options": {
+                    "D": "U2",
+                    "C": "L'",
+                    "A": "L",
+                    "B": "R"
+                },
+                "labels": [
+                    {
+                        "option": "A",
+                        "gold": "NO_CHANGE",
+                        "pred": "NO_CHANGE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "B",
+                        "gold": "INCREASE",
+                        "pred": "NO_CHANGE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "C",
+                        "gold": "DECREASE",
+                        "pred": "INCREASE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "D",
+                        "gold": "INCREASE",
+                        "pred": "INCREASE",
+                        "distance": 2
+                    }
+                ],
+                "correct_this_item": 2,
+                "response": "<A> NO_CHANGE </A>\n<B> NO_CHANGE </B>\n<C> INCREASE </C>\n<D> INCREASE </D>"
+            },
+            {
+                "index": 4,
+                "distance": 2,
+                "scramble": "L2 B2",
+                "options": {
+                    "A": "B'",
+                    "B": "B2",
+                    "C": "R2",
+                    "D": "B"
+                },
+                "labels": [
+                    {
+                        "option": "A",
+                        "gold": "NO_CHANGE",
+                        "pred": "INCREASE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "B",
+                        "gold": "DECREASE",
+                        "pred": "INCREASE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "C",
+                        "gold": "INCREASE",
+                        "pred": "NO_CHANGE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "D",
+                        "gold": "NO_CHANGE",
+                        "pred": "NO_CHANGE",
+                        "distance": 2
+                    }
+                ],
+                "correct_this_item": 1,
+                "response": "<A> INCREASE </A>\n<B> INCREASE </B>\n<C> NO_CHANGE </C>\n<D> NO_CHANGE </D>"
+            },
+            {
+                "index": 5,
+                "distance": 2,
+                "scramble": "R2 D2",
+                "options": {
+                    "B": "U",
+                    "A": "D2",
+                    "C": "D",
+                    "D": "L"
+                },
+                "labels": [
+                    {
+                        "option": "A",
+                        "gold": "DECREASE",
+                        "pred": "INCREASE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "B",
+                        "gold": "INCREASE",
+                        "pred": "DECREASE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "C",
+                        "gold": "NO_CHANGE",
+                        "pred": "INCREASE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "D",
+                        "gold": "INCREASE",
+                        "pred": "DECREASE",
+                        "distance": 2
+                    }
+                ],
+                "correct_this_item": 0,
+                "response": "<A> INCREASE </A>\n<B> DECREASE </B>\n<C> INCREASE </C>\n<D> DECREASE </D>"
+            },
+            {
+                "index": 6,
+                "distance": 2,
+                "scramble": "U' F'",
+                "options": {
+                    "C": "F2",
+                    "D": "F",
+                    "A": "B'",
+                    "B": "F'"
+                },
+                "labels": [
+                    {
+                        "option": "A",
+                        "gold": "INCREASE",
+                        "pred": "DECREASE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "B",
+                        "gold": "NO_CHANGE",
+                        "pred": "NO_CHANGE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "C",
+                        "gold": "NO_CHANGE",
+                        "pred": "DECREASE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "D",
+                        "gold": "DECREASE",
+                        "pred": "INCREASE",
+                        "distance": 2
+                    }
+                ],
+                "correct_this_item": 1,
+                "response": "<A> DECREASE </A>\n<B> NO_CHANGE </B>\n<C> DECREASE </C>\n<D> INCREASE </D>"
+            },
+            {
+                "index": 7,
+                "distance": 2,
+                "scramble": "B2 F'",
+                "options": {
+                    "D": "B2",
+                    "B": "B",
+                    "A": "L'",
+                    "C": "F"
+                },
+                "labels": [
+                    {
+                        "option": "A",
+                        "gold": "INCREASE",
+                        "pred": "INCREASE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "B",
+                        "gold": "NO_CHANGE",
+                        "pred": "NO_CHANGE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "C",
+                        "gold": "DECREASE",
+                        "pred": "NO_CHANGE",
+                        "distance": 2
+                    },
+                    {
+                        "option": "D",
+                        "gold": "DECREASE",
+                        "pred": "NO_CHANGE",
+                        "distance": 2
+                    }
+                ],
+                "correct_this_item": 2,
+                "response": "<A> INCREASE </A>\n<B> NO_CHANGE </B>\n<C> NO_CHANGE </C>\n<D> NO_CHANGE </D>"
+            }
+        ],
         "num_samples": 8,
         "fairness_metrics": {
             "overall_jsd_from_uniform": 0.0025361853382532412,

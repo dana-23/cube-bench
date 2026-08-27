@@ -45,6 +45,44 @@
         "avg_attempts_all_maxed": 6.0,
         "avg_attempts_all": 6.0,
         "hist_counts": {},
+        "per_item": [
+            {
+                "index": 0,
+                "attempts": 6,
+                "solved": false,
+                "failure_reason": "non_progress"
+            },
+            {
+                "index": 1,
+                "attempts": 6,
+                "solved": false,
+                "failure_reason": "non_progress"
+            },
+            {
+                "index": 2,
+                "attempts": 6,
+                "solved": false,
+                "failure_reason": "non_progress"
+            },
+            {
+                "index": 3,
+                "attempts": 6,
+                "solved": false,
+                "failure_reason": "non_progress"
+            },
+            {
+                "index": 4,
+                "attempts": 6,
+                "solved": false,
+                "failure_reason": "non_progress"
+            },
+            {
+                "index": 5,
+                "attempts": 6,
+                "solved": false,
+                "failure_reason": "non_progress"
+            }
+        ],
         "plot_path": "<PATH>"
     }
 ]
