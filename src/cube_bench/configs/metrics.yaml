@@ -1,0 +1,65 @@
+# Which metrics each evaluation reports. Names resolve to functions in core.scoring.
+
+verification:
+  unit: item
+  positive: "Yes"
+  correct_from: ok
+  metrics:
+    - accuracy
+    - balanced_accuracy
+    - parse_rate
+    - label_rate: {label: "Yes", key: yes_rate}
+    - binary_confusion
+    - unparsed
+    - binary_support
+    - group:
+        field: polarity
+        key: by_polarity
+        stats: [n, accuracy, balanced_accuracy, positive_label_share]
+        names: {positive_label_share: yes_label_share}
+    - group:
+        field: template_id
+        key: by_template
+        stats: [n, accuracy, positive_label_share]
+        names: {positive_label_share: yes_label_share}
+    - max_group_label_skew: {field: template_id, key: max_template_label_skew}
+
+move_effect:
+  unit: labels
+  classes: [INCREASE, NO_CHANGE, DECREASE]
+  metrics:
+    - micro_accuracy
+    - class_report
+    - chance_corrected
+    - confusion_matrix
+    - group_accuracy: {field: distance, key: per_distance_micro_acc}
+
+reconstruction:
+  unit: item
+  metrics:
+    - mean: {field: elementwise, key: average_accuracy_element_wise}
+    - mean: {field: overall, key: average_accuracy_overall}
+    - parsed_count: {key: correct_parse}
+
+prediction:
+  unit: item
+  correct_from: ok
+  metrics:
+    - accuracy: {key: average_accuracy}
+
+learning_curve:
+  unit: item
+  correct_from: solved
+  context_from:
+    max_attempts: [max_attempts]
+  metrics:
+    - recovery
+
+step_by_step:
+  unit: result.sample_log.steps_data
+  context_from:
+    steps: [n_moves_scrambled]
+    idk_weight: [abstention, idk_weight]
+  metrics:
+    - step_positions
+    - selective_decisions

@@ -76,3 +76,41 @@ python -c "import cube_bench as cb; print('cube_bench version:', getattr(cb, '__
 ```
 
 > **Note:** The Makefile assumes your environment from step 2 is already active. It does not create or manage envs.
+
+## Reported numbers
+
+Every number the paper reports is computed by `cube_bench.analysis` from the runs on disk, so a figure in
+a table can be traced back to the run that produced it and recomputed rather than trusted.
+
+```bash
+# What runs exist, with their sample counts and timestamps
+cube-bench-analyze scan --runs outputs
+
+# The numbers for the runs you name, each labelled with its source file and record
+cube-bench-analyze report outputs/2026-05-22/prediction-sweep/mixed outputs/g6/A_rep2/reflection/*
+
+# Recompute a finished run's metrics from its per-item records and diff against what it saved
+cube-bench-analyze rescore outputs/2026-08-25/*-step-by-step --reparse
+```
+
+Runs are named explicitly rather than discovered: a result file can hold several appended runs, and a
+table cell has to quote one of them, not whichever was written last.
+
+## Metrics registry
+
+Each evaluation declares *what* it measures in `src/cube_bench/configs/metrics.yaml`; `core/scoring.py`
+does the measuring, from the `ItemRecord`s the evaluation produced.
+
+```yaml
+verification:
+  unit: item
+  positive: "Yes"
+  metrics:
+    - accuracy
+    - balanced_accuracy
+    - parse_rate
+```
+
+Because scoring reads records rather than counters accumulated during the run, the same functions score a
+run live and re-score it later from the per-item records it persisted. `cube-bench-analyze rescore`
+exercises exactly that path, and the test suite asserts the two agree.
