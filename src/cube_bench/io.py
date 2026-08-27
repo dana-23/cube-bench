@@ -1,4 +1,4 @@
-"""JSON and YAML read/write helpers used to persist evaluation results."""
+"""JSON read/write helpers used to persist evaluation results."""
 
 from __future__ import annotations
 import json
@@ -6,7 +6,6 @@ import logging
 from pathlib import Path
 from typing import Any, Dict
 
-import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +26,3 @@ def save_results(file_path: Path, results: Dict[str, Any]):
     existing_data.append(results)
     file_path.write_text(json.dumps(existing_data, indent=4), encoding="utf-8")
     logger.info("Saved results → %s", file_path)
-
-
-def load_prompts(prompts_path: Path) -> Dict[str, Any]:
-    """Load and parse the YAML prompt bundle at *prompts_path*."""
-    if not prompts_path.exists():
-        raise FileNotFoundError(f"Prompts file not found at {prompts_path}")
-    return yaml.safe_load(prompts_path.read_text(encoding="utf-8"))

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import base64
-import io
 import re
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -15,9 +13,8 @@ import kociemba
 import matplotlib.pyplot as plt
 import numpy as np
 import pycuber as pc  # type: ignore – external dependency
-import torch
 from kociemba.pykociemba.facecube import FaceCube
-from PIL import Image, ImageDraw, ImageEnhance
+from PIL import Image
 
 import cube_bench.optimal.solver as sv
 
@@ -81,7 +78,9 @@ def _co_eo_from_facelets(facelets: str) -> tuple[tuple[int, ...], tuple[int, ...
     return tuple(int(x) for x in cc.co[:8]), tuple(int(x) for x in cc.eo[:12])
 
 
+@lru_cache(maxsize=262144)
 def _solve_with_oracle(facelets: str) -> str:
+    """Optimal solution for a facelet string; pure in its argument, so memoized."""
     with _ORACLE_LOCK:
         return sv.solve(facelets)
 
@@ -355,32 +354,32 @@ class VirtualCube:
         return str(temp)
 
     # Rendering
-    def render(self, *, cell_size: int = 60, sticker_border: int = 2,  # pylint: disable=too-many-branches
-               face_gap: int = 40,
-               return_type: str = "pil", file_path: Optional[Union[str, Path]] = None,
+    def render(self, *, cell_size: int = 60, sticker_border: int = 2,
+               face_gap: int = 40, file_path: Optional[Union[str, Path]] = None,
                dpi: int = 100, add_labels: bool = True):
-        """Render the cube net as ``return_type``, optionally saving ``file_path``."""
+        """Render the cube net as a PIL image, or as a path when ``file_path`` is supplied."""
         canvas, layout = self._build_canvas(
             cell_size=cell_size,
             sticker_border=sticker_border,
             face_gap=face_gap,
         )
 
-        need_mpl = add_labels or return_type in {"figure", "path"} or file_path is not None
-        if need_mpl:
+        if add_labels or file_path is not None:
             fig = self._canvas_to_figure(canvas, layout, dpi=dpi, add_labels=add_labels)
-            if file_path:
-                file_path = Path(file_path)
-                if not file_path.suffix:
-                    file_path = file_path.with_suffix(".png")
-                fig.savefig(
-                    file_path,
-                    dpi=dpi,
-                    bbox_inches="tight",
-                    pad_inches=0.1,
-                    facecolor=fig.get_facecolor(),
-                )
-            if return_type not in {"figure", "path"}:
+            try:
+                if file_path:
+                    file_path = Path(file_path)
+                    if not file_path.suffix:
+                        file_path = file_path.with_suffix(".png")
+                    fig.savefig(
+                        file_path,
+                        dpi=dpi,
+                        bbox_inches="tight",
+                        pad_inches=0.1,
+                        facecolor=fig.get_facecolor(),
+                    )
+                    return Path(file_path)
+
                 fig.canvas.draw()
                 rgba = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)
                 w, h = fig.canvas.get_width_height()
@@ -390,199 +389,18 @@ class VirtualCube:
                 if scale > 1:
                     w, h = w * scale, h * scale
 
-                rgba = rgba.reshape(h, w, 4)
-
-                canvas = rgba[..., :3].copy()
-
-            if return_type != "figure":
+                canvas = rgba.reshape(h, w, 4)[..., :3].copy()
+            finally:
                 plt.close(fig)
-        else:
-            fig = None
 
-        if return_type == "figure":
-            return fig
-
-        if return_type == "path":
-            if not file_path:
-                raise ValueError("file_path must be provided when return_type='path'.")
-            return Path(file_path)
-
-        if return_type == "numpy":
-            return canvas
-
-        if return_type == "pil":
-            if Image is None:
-                raise RuntimeError("Pillow not installed; cannot return PIL image.")
-            return Image.fromarray(canvas, mode="RGB")
-
-        if return_type == "tensor":
-            tensor = torch.from_numpy(canvas).permute(2, 0, 1).float() / 255.0
-            return tensor
-
-        if return_type in {"bytes", "base64"}:
-            if Image is None:
-                raise RuntimeError("Pillow not installed; cannot encode image.")
-            pil_img = Image.fromarray(canvas, mode="RGB")
-            buf = io.BytesIO()
-            pil_img.save(buf, format="PNG")
-            data = buf.getvalue()
-            if return_type == "bytes":
-                return data
-            return base64.b64encode(data).decode("utf-8")
-        raise ValueError(f"Unknown return_type '{return_type}'.")
+        if Image is None:
+            raise RuntimeError("Pillow not installed; cannot return PIL image.")
+        return Image.fromarray(canvas, mode="RGB")
 
     def to_image(self, file_path: Optional[Union[str, Path]] = None, **kwargs):
         """Return a PIL image, or a path when ``file_path`` is supplied."""
-        return_type = "path" if file_path else "pil"
-        return self.render(file_path=file_path, return_type=return_type, **kwargs)
+        return self.render(file_path=file_path, **kwargs)
 
-    # Image variants
-    def _augment_image(self, img: Image.Image, variant: str, *, brightness: float = 0.8) -> Image.Image:
-        """Apply a clean, occluded, or brightness-adjusted image-only variant."""
-        variant = (variant or "clean").lower()
-        if variant == "clean":
-            return img
-
-        if variant == "occl":
-            out = img.copy()
-            draw = ImageDraw.Draw(out)
-            w, h = out.size
-            band_h = max(6, int(0.15 * h))
-            top = (h - band_h) // 2
-            draw.rectangle([0, top, w, top + band_h], fill=(0, 0, 0))
-            return out
-
-        if variant == "bright":
-            enh = ImageEnhance.Brightness(img)
-            return enh.enhance(brightness)
-
-        raise ValueError(f"Unknown image variant '{variant}'. Supported: clean, rot90, occl, bright.")
-
-
-    def recolor_isomorphic(self, color_map: Dict[str, str]) -> None:
-        """Recolour stickers and rebuild pycuber's colour-keyed internals."""
-        centers = { str(self._cube.get_face(f)[1][1].colour).lower(): self._cube.get_face(f)[1][1].colour
-                    for f in "URFDLB" }
-
-        norm = { self._canon(k): self._canon(v) for k, v in color_map.items() }
-        missing = set(norm.values()) - set(centers.keys())
-        if missing:
-            raise ValueError(f"Unknown target colors in this cube scheme: {sorted(missing)}")
-
-        for f in self.FACE_ORDER:
-            face = self._cube.get_face(f)
-            for r in range(3):
-                for c in range(3):
-                    sq = face[r][c]
-                    src = str(sq.colour).lower()
-                    if src in norm:
-                        sq.colour = centers[norm[src]]
-
-        # Copying rebuilds sets and dictionaries with the new colour hashes.
-        self._cube = self._cube.copy()
-
-    def _convert_render(self, pil_img: Image.Image, return_type: str, *, dpi: int = 100,
-                        file_path: Optional[Union[str, Path]] = None):
-        """Convert an already-rendered PIL image to the requested ``return_type``."""
-        if return_type == "pil":
-            return pil_img
-        if return_type == "numpy":
-            return np.asarray(pil_img, dtype=np.uint8)
-        if return_type == "tensor":
-            return torch.from_numpy(np.asarray(pil_img)).permute(2, 0, 1).float() / 255.0
-        if return_type in {"bytes", "base64"}:
-            buf = io.BytesIO()
-            pil_img.save(buf, format="PNG")
-            data = buf.getvalue()
-            return data if return_type == "bytes" else base64.b64encode(data).decode("utf-8")
-        if return_type == "path":
-            if not file_path:
-                raise ValueError("file_path must be provided when return_type='path'.")
-            file_path = Path(file_path)
-            if not file_path.suffix:
-                file_path = file_path.with_suffix(".png")
-            pil_img.save(file_path, format="PNG")
-            return file_path
-        if return_type == "figure":
-            fig, ax = plt.subplots(figsize=(pil_img.width / dpi, pil_img.height / dpi), dpi=dpi)
-            ax.imshow(pil_img)
-            ax.axis("off")
-            fig.tight_layout(pad=0)
-            return fig
-        raise ValueError(f"Unknown return_type '{return_type}'.")
-
-    def render_variant(self, variant: str, *, cell_size: int = 60, sticker_border: int = 2,
-                       face_gap: int = 40, dpi: int = 100, add_labels: bool = True,
-                       recolor_map: dict[str, str] | None = None, return_type: str = "pil",
-                       file_path: Optional[Union[str, Path]] = None):
-        """Render a state-level recolour or an image-only clean/occluded/bright variant."""
-        v = (variant or "clean").lower()
-
-        if v == "recolor":
-            if not recolor_map:
-                raise ValueError("render_variant('recolor') requires `recolor_map`.")
-            source = self.clone()
-            source.recolor_isomorphic(recolor_map)
-        else:
-            source = self
-
-        pil_img = source.render(
-            cell_size=cell_size,
-            sticker_border=sticker_border,
-            face_gap=face_gap,
-            dpi=dpi,
-            add_labels=add_labels,
-            return_type="pil",
-        )
-        if v != "recolor":
-            pil_img = self._augment_image(pil_img, v)
-        return self._convert_render(pil_img, return_type, dpi=dpi, file_path=file_path)
-
-
-    def to_image_variant(
-        self,
-        variant: str,
-        *,
-        recolor_map: dict[str, str] | None = None,
-        **kwargs
-    ) -> Image.Image:
-        """Render one variant as a PIL image."""
-        return self.render_variant(
-            variant,
-            recolor_map=recolor_map,
-            return_type="pil",
-            **kwargs
-        )
-
-
-    def render_variants(
-        self,
-        variants: list[str],
-        *,
-        recolor_map: dict[str, str] | None = None,
-        return_type: str = "pil",
-        **kwargs
-    ) -> dict[str, Image.Image | np.ndarray | torch.Tensor | bytes | str | Path]:
-        """Render multiple variants into a name-to-image mapping."""
-        out = {}
-        base: Optional[Image.Image] = None
-        for v in variants:
-            if v.lower() == "recolor":
-                out[v] = self.render_variant(v, recolor_map=recolor_map, return_type=return_type, **kwargs)
-                continue
-            # Image-only variants share one base render.
-            if base is None:
-                base = self.render(
-                    return_type="pil",
-                    **{k: val for k, val in kwargs.items() if k != "file_path"},
-                )
-            out[v] = self._convert_render(
-                self._augment_image(base, v.lower()),
-                return_type,
-                dpi=kwargs.get("dpi", 100),
-                file_path=kwargs.get("file_path"),
-            )
-        return out
 
 
 

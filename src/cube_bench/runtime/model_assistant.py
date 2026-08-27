@@ -11,13 +11,11 @@ import time
 from abc import ABC, abstractmethod
 from collections import deque
 from dataclasses import dataclass
-from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Type, Union
 
 import torch
-import yaml
 from dotenv import load_dotenv
 from PIL import Image
 
@@ -1041,17 +1039,6 @@ class ModelAssistant:
     def cleanup(self) -> None:
         """Release the backend's resources."""
         self.strategy.cleanup()
-
-
-# Prompt-file helper
-@lru_cache(maxsize=1)
-def load_prompts() -> Dict[str, Any]:
-    """Load ./prompts.yaml once and cache it."""
-    path = Path("prompts.yaml")
-    if not path.exists():
-        raise FileNotFoundError("prompts.yaml file not found")
-    with path.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
 
 
 # Demo
