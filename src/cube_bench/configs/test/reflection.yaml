@@ -9,9 +9,11 @@ reveal_choice: true
 # supplies no verdict and acts as the control arm.
 assert_incorrect: always
 
-# ``legacy`` changes the directive with assertion status; ``neutral`` fixes one
-# non-directive re-answer prompt across arms.
-reanswer_mode: legacy
+# ``neutral`` fixes one non-directive re-answer prompt across arms, so
+# ``assert_incorrect`` is the only manipulated factor; this is what the reported
+# factorial used. ``legacy`` reproduces the older directive prompt, under which
+# the assertion also flips an instruction to exclude the prior answer.
+reanswer_mode: neutral
 
 # Reuse a run directory, draft.json, or solve_moves_*.json to keep sibling arms
 # item-paired on the same initially-correct set.

@@ -106,7 +106,7 @@ class TestOrchestrator:
                 max_reflections=test_cfg.max_reflections,
                 reveal_choice=test_cfg.get("reveal_choice", False),
                 assert_incorrect=test_cfg.get("assert_incorrect", "always"),
-                reanswer_mode=test_cfg.get("reanswer_mode", "legacy"),
+                reanswer_mode=test_cfg.get("reanswer_mode", "neutral"),
                 draft_from=test_cfg.get("draft_from", None),
                 **common,
             )
