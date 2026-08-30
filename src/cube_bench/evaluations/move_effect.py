@@ -15,7 +15,10 @@ from cube_bench.sim.cube_simulator import VirtualCube
 
 class MoveEffectTest(SingleAskTest):
     """Label each move's distance effect with depth- and slot-balanced sampling."""
-    TAG_RE = re.compile(r"<([ABCD])>\s*(DECREASE|NO[_ ]?CHANGE|INCREASE)\s*</\1>", re.IGNORECASE)
+
+    TAG_RE = re.compile(
+        r"<([ABCD])>\s*(DECREASE|NO[_ ]?CHANGE|INCREASE)\s*</\1>", re.IGNORECASE
+    )
     # Fallback for replies that use "A: DECREASE" instead of the tagged form.
     LETTER_RES = {
         L: re.compile(rf"{L}\s*:\s*(DECREASE|NO[_ ]?CHANGE|INCREASE)", re.IGNORECASE)
@@ -34,7 +37,9 @@ class MoveEffectTest(SingleAskTest):
         self.double_slot_cycle = deque(self.SLOTS)
 
         self.presented_counts = Counter({c: 0 for c in self.CLASSES})
-        self.per_slot_counts = {s: Counter({c: 0 for c in self.CLASSES}) for s in self.SLOTS}
+        self.per_slot_counts = {
+            s: Counter({c: 0 for c in self.CLASSES}) for s in self.SLOTS
+        }
         self.class_debt = Counter()
         self.target_double_counts = Counter()
         self.target_double_success = Counter()
@@ -43,7 +48,9 @@ class MoveEffectTest(SingleAskTest):
 
         self.depth_item_count = Counter()
         self.depth_presented_counts = defaultdict(Counter)
-        self.depth_feasible2_counts = defaultdict(lambda: Counter({c: 0 for c in self.CLASSES}))
+        self.depth_feasible2_counts = defaultdict(
+            lambda: Counter({c: 0 for c in self.CLASSES})
+        )
         self.alpha_smooth = 1.0
 
         self._option_mix_ok: Counter = Counter()
@@ -55,14 +62,22 @@ class MoveEffectTest(SingleAskTest):
         self._option_mix_ok = Counter()
 
         self._logger.info("=" * 80)
-        self._logger.info("Initializing Move-Effect test on %s", self.assistant.get_name())
+        self._logger.info(
+            "Initializing Move-Effect test on %s", self.assistant.get_name()
+        )
         self._logger.info(
             "Number of samples: %s | Scramble depth: %s", num_samples, self.n_moves
         )
         self._logger.info("=" * 80)
 
-    def _label_all_neighbors(self, vc: VirtualCube) -> Tuple[Dict[str, List[str]], Dict[str, str]]:
-        buckets: Dict[str, List[str]] = {"DECREASE": [], "NO_CHANGE": [], "INCREASE": []}
+    def _label_all_neighbors(
+        self, vc: VirtualCube
+    ) -> Tuple[Dict[str, List[str]], Dict[str, str]]:
+        buckets: Dict[str, List[str]] = {
+            "DECREASE": [],
+            "NO_CHANGE": [],
+            "INCREASE": [],
+        }
         labels_by_move: Dict[str, str] = {}
         old_distance = vc.get_distance()
 
@@ -89,7 +104,11 @@ class MoveEffectTest(SingleAskTest):
         # Laplace smoothing prevents unobserved depths from dominating the target.
         for c in self.CLASSES:
             succ = self.depth_feasible2_counts[d][c]
-            p2[c] = (succ + self.alpha_smooth) / (items + 2 * self.alpha_smooth) if items >= 0 else 1/2
+            p2[c] = (
+                (succ + self.alpha_smooth) / (items + 2 * self.alpha_smooth)
+                if items >= 0
+                else 1 / 2
+            )
         z = sum(p2.values()) or 1.0
         extra_share = {c: (p2[c] / z) * 0.25 for c in self.CLASSES}
         target = {c: 0.25 + extra_share[c] for c in self.CLASSES}
@@ -122,7 +141,9 @@ class MoveEffectTest(SingleAskTest):
 
         return max(feasible, key=lambda c: deficits.get(c, 0.0))
 
-    def _assign_with_double_slot(self, picked: List[Tuple[str, str]], double_cls: str | None) -> Dict[str, str]:
+    def _assign_with_double_slot(
+        self, picked: List[Tuple[str, str]], double_cls: str | None
+    ) -> Dict[str, str]:
         """Rotate the doubled class across slots, then balance the remaining assignments."""
         slots = list(self.SLOTS)
         assignment: Dict[str, str] = {}
@@ -130,7 +151,9 @@ class MoveEffectTest(SingleAskTest):
         if double_cls is not None:
             double_slot = self.double_slot_cycle[0]
             self.double_slot_cycle.rotate(-1)
-            idx = next((i for i, (_, cls) in enumerate(picked) if cls == double_cls), None)
+            idx = next(
+                (i for i, (_, cls) in enumerate(picked) if cls == double_cls), None
+            )
             if idx is not None:
                 move, cls = picked.pop(idx)
                 assignment[double_slot] = move
@@ -192,7 +215,9 @@ class MoveEffectTest(SingleAskTest):
                 for mv in got2:
                     chosen_moves.add(mv)
                     picked.append((mv, target_double))
-                actual_counts[target_double] = sum(1 for _, c in picked if c == target_double)
+                actual_counts[target_double] = sum(
+                    1 for _, c in picked if c == target_double
+                )
                 if actual_counts[target_double] >= 2:
                     doubled_class = target_double
                     self.target_double_success[target_double] += 1
@@ -203,9 +228,13 @@ class MoveEffectTest(SingleAskTest):
         desired_share = self._feasible_target_for_depth(d)
         while len(picked) < 4:
             total_here = sum(actual_counts.values()) or 1
+
             def share(cls):
                 return actual_counts[cls] / total_here
-            order = sorted(self.CLASSES, key=lambda c: desired_share[c] - share(c), reverse=True)
+
+            order = sorted(
+                self.CLASSES, key=lambda c: desired_share[c] - share(c), reverse=True
+            )
             filled = False
             for cls in order:
                 got = take(cls, 1)
@@ -227,7 +256,11 @@ class MoveEffectTest(SingleAskTest):
             if actual_counts[cls] == 0:
                 self.missing_class_counts[cls] += 1
 
-        comp = (actual_counts["DECREASE"], actual_counts["NO_CHANGE"], actual_counts["INCREASE"])
+        comp = (
+            actual_counts["DECREASE"],
+            actual_counts["NO_CHANGE"],
+            actual_counts["INCREASE"],
+        )
         self.composition_counts[comp] += 1
         if target_double is not None and doubled_class != target_double:
             self.class_debt[target_double] += 1
@@ -267,7 +300,9 @@ class MoveEffectTest(SingleAskTest):
             "- Output exactly four lines <A> ... </A> ... <D> ... </D>\n"
         )
 
-    def _user_prompt(self, centers: Dict[str, str], state_text: str, options: Dict[str, str]) -> str:
+    def _user_prompt(
+        self, centers: Dict[str, str], state_text: str, options: Dict[str, str]
+    ) -> str:
         return (
             f"**Face Centers:**\n"
             f"U: {centers['U_color']}\nR: {centers['R_color']}\nF: {centers['F_color']}\n"
@@ -285,7 +320,9 @@ class MoveEffectTest(SingleAskTest):
 
     def build_item(self, idx: int) -> Dict[str, Any]:
         cube = VirtualCube()
-        scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves, exact_depth=True)
+        scramble = cube.scramble(
+            random_seed=idx, n_moves=self.n_moves, exact_depth=True
+        )
 
         d = cube.get_distance()
         self.depth_item_count[d] += 1
@@ -336,8 +373,10 @@ class MoveEffectTest(SingleAskTest):
 
     def parse(self, response: Optional[str]) -> Dict[str, str]:
         text = response or ""
-        preds = {m.group(1).upper(): m.group(2).upper().replace(" ", "_")
-                 for m in self.TAG_RE.finditer(text)}
+        preds = {
+            m.group(1).upper(): m.group(2).upper().replace(" ", "_")
+            for m in self.TAG_RE.finditer(text)
+        }
         for k in "ABCD":
             if k not in preds:
                 pat = self.LETTER_RES[k].search(text)
@@ -363,15 +402,19 @@ class MoveEffectTest(SingleAskTest):
         correct_this_item = sum(int(label["pred"] == label["gold"]) for label in labels)
 
         if self.verbose:
-            predictions = {k: prediction.get(k) for k in 'ABCD'}
+            predictions = {k: prediction.get(k) for k in "ABCD"}
             buckets = item["buckets"]
             self._logger.info(
-                "[%s] d=%s  scramble=%s", item["index"], item["distance"], item["scramble"])
+                "[%s] d=%s  scramble=%s",
+                item["index"],
+                item["distance"],
+                item["scramble"],
+            )
             self._logger.info(
                 "bucket sizes: DEC=%s, NC=%s, INC=%s",
-                len(buckets['DECREASE']),
-                len(buckets['NO_CHANGE']),
-                len(buckets['INCREASE']),
+                len(buckets["DECREASE"]),
+                len(buckets["NO_CHANGE"]),
+                len(buckets["INCREASE"]),
             )
             self._logger.info("options: %s", item["options"])
             self._logger.info("truth:   %s", truth)
@@ -411,9 +454,14 @@ class MoveEffectTest(SingleAskTest):
         self._logger.info("model preds q: %s", scored["pred_mix"])
         self._logger.info(
             "baseline(always majority): %.3f  baseline(prior-sample): %.3f  exp(acc from q.priors): %.3f",
-            scored["maj_baseline"], scored["prior_sample_baseline"], scored["expected_dot"],
+            scored["maj_baseline"],
+            scored["prior_sample_baseline"],
+            scored["expected_dot"],
         )
-        self._logger.info("option class coverage counts (distinct classes per item): %s", dict(self._option_mix_ok))
+        self._logger.info(
+            "option class coverage counts (distinct classes per item): %s",
+            dict(self._option_mix_ok),
+        )
 
         return {
             "n_moves": self.n_moves,
@@ -448,10 +496,21 @@ class MoveEffectTest(SingleAskTest):
         jsd_target = jensen_shannon(priors, target_mix)
         max_abs_dev_target = max(abs(priors[k] - target_mix[k]) for k in tri)
 
-        slot_priors = {s: {c: safe_prop(self.per_slot_counts[s][c], sum(self.per_slot_counts[s].values()))
-                           for c in tri} for s in self.SLOTS}
-        slot_jsd_uniform = {s: jensen_shannon(slot_priors[s], uniform) for s in self.SLOTS}
-        slot_jsd_target = {s: jensen_shannon(slot_priors[s], target_mix) for s in self.SLOTS}
+        slot_priors = {
+            s: {
+                c: safe_prop(
+                    self.per_slot_counts[s][c], sum(self.per_slot_counts[s].values())
+                )
+                for c in tri
+            }
+            for s in self.SLOTS
+        }
+        slot_jsd_uniform = {
+            s: jensen_shannon(slot_priors[s], uniform) for s in self.SLOTS
+        }
+        slot_jsd_target = {
+            s: jensen_shannon(slot_priors[s], target_mix) for s in self.SLOTS
+        }
 
         double_success_rate = {}
         for c in self.CLASSES:
@@ -476,25 +535,53 @@ class MoveEffectTest(SingleAskTest):
 
         within5_uniform = all(abs(priors[k] - 1 / 3) <= 0.05 for k in tri)
         within5_target = all(abs(priors[k] - target_mix[k]) <= 0.05 for k in tri)
-        slots_within7_uniform = all(all(abs(slot_priors[s][k] - 1 / 3) <= 0.07 for k in tri) for s in self.SLOTS)
-        slots_within7_target = all(all(abs(slot_priors[s][k] - target_mix[k]) <= 0.07 for k in tri) for s in self.SLOTS)
+        slots_within7_uniform = all(
+            all(abs(slot_priors[s][k] - 1 / 3) <= 0.07 for k in tri) for s in self.SLOTS
+        )
+        slots_within7_target = all(
+            all(abs(slot_priors[s][k] - target_mix[k]) <= 0.07 for k in tri)
+            for s in self.SLOTS
+        )
 
-        self._logger.info("FAIRNESS - overall JSD(uniform)=%.4f  max_abs_dev=%.3f  within 5%%=%s",
-                          jsd_uniform, max_abs_dev_uniform, within5_uniform)
+        self._logger.info(
+            "FAIRNESS - overall JSD(uniform)=%.4f  max_abs_dev=%.3f  within 5%%=%s",
+            jsd_uniform,
+            max_abs_dev_uniform,
+            within5_uniform,
+        )
         self._logger.info(
             "FAIRNESS - overall JSD(target)=%.4f  max_abs_dev=%.3f  within 5%%=%s  target=%s",
-            jsd_target, max_abs_dev_target, within5_target, target_mix)
+            jsd_target,
+            max_abs_dev_target,
+            within5_target,
+            target_mix,
+        )
         self._logger.info("FAIRNESS - per-slot priors: %s", slot_priors)
-        self._logger.info("FAIRNESS - per-slot JSD(uniform): %s  within 7%%=%s",
-                          slot_jsd_uniform, slots_within7_uniform)
-        self._logger.info("FAIRNESS - per-slot JSD(target):  %s  within 7%%=%s",
-                          slot_jsd_target, slots_within7_target)
-        self._logger.info("FAIRNESS - target-double attempts: %s", dict(self.target_double_counts))
-        self._logger.info("FAIRNESS - target-double success:  %s  rates=%s",
-                          dict(self.target_double_success), double_success_rate)
-        self._logger.info("FAIRNESS - missing-class counts:   %s", dict(self.missing_class_counts))
-        self._logger.info("FAIRNESS - composition histogram (#DEC,#NC,#INC): %s",
-                          dict(self.composition_counts))
+        self._logger.info(
+            "FAIRNESS - per-slot JSD(uniform): %s  within 7%%=%s",
+            slot_jsd_uniform,
+            slots_within7_uniform,
+        )
+        self._logger.info(
+            "FAIRNESS - per-slot JSD(target):  %s  within 7%%=%s",
+            slot_jsd_target,
+            slots_within7_target,
+        )
+        self._logger.info(
+            "FAIRNESS - target-double attempts: %s", dict(self.target_double_counts)
+        )
+        self._logger.info(
+            "FAIRNESS - target-double success:  %s  rates=%s",
+            dict(self.target_double_success),
+            double_success_rate,
+        )
+        self._logger.info(
+            "FAIRNESS - missing-class counts:   %s", dict(self.missing_class_counts)
+        )
+        self._logger.info(
+            "FAIRNESS - composition histogram (#DEC,#NC,#INC): %s",
+            dict(self.composition_counts),
+        )
 
         return {
             "overall_jsd_from_uniform": jsd_uniform,
@@ -512,20 +599,23 @@ class MoveEffectTest(SingleAskTest):
             "target_double_success": dict(self.target_double_success),
             "target_double_success_rate": double_success_rate,
             "missing_class_counts": dict(self.missing_class_counts),
-            "composition_histogram": {str(k): v for k, v in self.composition_counts.items()},
+            "composition_histogram": {
+                str(k): v for k, v in self.composition_counts.items()
+            },
             "priors_by_depth": priors_by_depth,
             "dev_by_depth": dev_by_depth,
             "target_mix_overall": target_mix,
         }
-
 
     # ----- Reporting -----
 
     def summary(self, payload: Dict[str, Any], records: List[ItemRecord]) -> None:
         self._logger.info(
             "Move-Effect micro-accuracy: %.3f | macro-F1: %.3f",
-            payload["micro_acc"], payload["macro_f1"],
+            payload["micro_acc"],
+            payload["macro_f1"],
         )
         self._logger.info(
-            "round-robin/double debt (could not honor): %s", dict(self.class_debt))
+            "round-robin/double debt (could not honor): %s", dict(self.class_debt)
+        )
         self._logger.info("presented class totals: %s", dict(self.presented_counts))
