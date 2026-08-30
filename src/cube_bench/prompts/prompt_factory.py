@@ -32,13 +32,3 @@ class PromptFactory:
 
         else:
             return tpl["sys"], tpl["user"]
-
-    @staticmethod
-    def get_section(prompt_name: str, section: str) -> Any:
-        """Fetch a non-prompt section of a bundle, such as a surface-form bank."""
-        if prompt_name not in _TEMPLATES:
-            raise KeyError(f"Unknown prompt: {prompt_name!r}")
-        bundle = _TEMPLATES[prompt_name]
-        if section not in bundle:
-            raise KeyError(f"Prompt {prompt_name!r} has no {section!r} section")
-        return bundle[section]

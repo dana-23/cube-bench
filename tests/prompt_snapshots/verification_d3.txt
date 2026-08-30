@@ -1,51 +1,42 @@
 ===== call 0 system =====
-You are a specialized Rubik's Cube verification assistant with independent textual and visual analysis capabilities. You are given two separate inputs: (1) an image of a Rubik's Cube showing all its faces, and (2) a claim about the front face of that cube. Your tasks are:
+You are a specialized Rubik's Cube verification assistant with independent textual and visual analysis capabilities. You are given two separate inputs: (1) a textual representation of the front face of a 3x3x3 Rubik's Cube, and (2) an image of a Rubik's Cube showing all its faces. Your tasks are:
   1. Independently identify the front face in the image.
-  2. Read the claim carefully, including whether it asserts a match or a mismatch. Do not assume the claim is true, and do not assume the description in it was derived from the image.
-  3. Compare the nine color positions on the front face from the image against the description given in the claim.
-  4. If the claim is true, respond with 'Answer: Yes'. If the claim is false, respond with 'Answer: No'.
-Important: Always perform the verification independently. 'Answer: Yes' means the claim is correct, which is not the same as the two representations matching; check whether the claim is stated affirmatively or negatively before you answer.
+  2. Compare the nine color positions on the front face from the image with the provided textual representation. Do not assume the text is derived from or automatically matches the image.
+  3. If all nine positions match exactly in color, respond with 'Answer: Yes'. If any position does not match, respond with 'Answer: No'.
+Important: Always perform the verification independently; do not default to 'Answer: Yes' without a thorough comparison.
 ===== call 0 user =====
-1. An image of a Rubik's Cube showing all its faces.
-2. A claim about the front face of that cube:
-
-The front face of the cube in the image is exactly this: [['white', 'red', 'red'], ['green', 'green', 'green'], ['blue', 'blue', 'blue']]
+1. A textual representation of the front face of a 3x3x3 Rubik's Cube: [['white', 'red', 'red'], ['green', 'green', 'green'], ['blue', 'blue', 'blue']]
+2. An image of a Rubik's Cube showing all its faces.
 
 Task:
   - Determine the front face of the Rubik's Cube in the image.
-  - Decide whether the claim above is true or false.
-  - Output 'Answer: Yes' if the claim is true, or 'Answer: No' if the claim is false.
+  - Compare the colors of the front face with the provided textual representation.
+  - Output 'Answer: Yes' if they match exactly in all nine positions, or 'Answer: No' if there is any mismatch.
 ===== call 1 system =====
-You are a specialized Rubik's Cube verification assistant with independent textual and visual analysis capabilities. You are given two separate inputs: (1) an image of a Rubik's Cube showing all its faces, and (2) a claim about the front face of that cube. Your tasks are:
+You are a specialized Rubik's Cube verification assistant with independent textual and visual analysis capabilities. You are given two separate inputs: (1) a textual representation of the front face of a 3x3x3 Rubik's Cube, and (2) an image of a Rubik's Cube showing all its faces. Your tasks are:
   1. Independently identify the front face in the image.
-  2. Read the claim carefully, including whether it asserts a match or a mismatch. Do not assume the claim is true, and do not assume the description in it was derived from the image.
-  3. Compare the nine color positions on the front face from the image against the description given in the claim.
-  4. If the claim is true, respond with 'Answer: Yes'. If the claim is false, respond with 'Answer: No'.
-Important: Always perform the verification independently. 'Answer: Yes' means the claim is correct, which is not the same as the two representations matching; check whether the claim is stated affirmatively or negatively before you answer.
+  2. Compare the nine color positions on the front face from the image with the provided textual representation. Do not assume the text is derived from or automatically matches the image.
+  3. If all nine positions match exactly in color, respond with 'Answer: Yes'. If any position does not match, respond with 'Answer: No'.
+Important: Always perform the verification independently; do not default to 'Answer: Yes' without a thorough comparison.
 ===== call 1 user =====
-1. An image of a Rubik's Cube showing all its faces.
-2. A claim about the front face of that cube:
-
-The front face of the cube in the image is exactly this: [['red', 'red', 'red'], ['blue', 'green', 'green'], ['orange', 'orange', 'orange']]
+1. A textual representation of the front face of a 3x3x3 Rubik's Cube: [['red', 'red', 'red'], ['blue', 'green', 'green'], ['orange', 'orange', 'orange']]
+2. An image of a Rubik's Cube showing all its faces.
 
 Task:
   - Determine the front face of the Rubik's Cube in the image.
-  - Decide whether the claim above is true or false.
-  - Output 'Answer: Yes' if the claim is true, or 'Answer: No' if the claim is false.
+  - Compare the colors of the front face with the provided textual representation.
+  - Output 'Answer: Yes' if they match exactly in all nine positions, or 'Answer: No' if there is any mismatch.
 ===== call 2 system =====
-You are a specialized Rubik's Cube verification assistant with independent textual and visual analysis capabilities. You are given two separate inputs: (1) an image of a Rubik's Cube showing all its faces, and (2) a claim about the front face of that cube. Your tasks are:
+You are a specialized Rubik's Cube verification assistant with independent textual and visual analysis capabilities. You are given two separate inputs: (1) a textual representation of the front face of a 3x3x3 Rubik's Cube, and (2) an image of a Rubik's Cube showing all its faces. Your tasks are:
   1. Independently identify the front face in the image.
-  2. Read the claim carefully, including whether it asserts a match or a mismatch. Do not assume the claim is true, and do not assume the description in it was derived from the image.
-  3. Compare the nine color positions on the front face from the image against the description given in the claim.
-  4. If the claim is true, respond with 'Answer: Yes'. If the claim is false, respond with 'Answer: No'.
-Important: Always perform the verification independently. 'Answer: Yes' means the claim is correct, which is not the same as the two representations matching; check whether the claim is stated affirmatively or negatively before you answer.
+  2. Compare the nine color positions on the front face from the image with the provided textual representation. Do not assume the text is derived from or automatically matches the image.
+  3. If all nine positions match exactly in color, respond with 'Answer: Yes'. If any position does not match, respond with 'Answer: No'.
+Important: Always perform the verification independently; do not default to 'Answer: Yes' without a thorough comparison.
 ===== call 2 user =====
-1. An image of a Rubik's Cube showing all its faces.
-2. A claim about the front face of that cube:
-
-The front face of the cube in the image is NOT this: [['yellow', 'green', 'green'], ['yellow', 'green', 'green'], ['orange', 'green', 'green']]
+1. A textual representation of the front face of a 3x3x3 Rubik's Cube: [['yellow', 'green', 'green'], ['yellow', 'green', 'green'], ['orange', 'green', 'green']]
+2. An image of a Rubik's Cube showing all its faces.
 
 Task:
   - Determine the front face of the Rubik's Cube in the image.
-  - Decide whether the claim above is true or false.
-  - Output 'Answer: Yes' if the claim is true, or 'Answer: No' if the claim is false.
+  - Compare the colors of the front face with the provided textual representation.
+  - Output 'Answer: Yes' if they match exactly in all nine positions, or 'Answer: No' if there is any mismatch.

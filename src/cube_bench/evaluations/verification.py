@@ -24,26 +24,10 @@ class VerificationTest(SingleAskTest):
         "R", "R'", "R2",
     )
 
-    # (polarity, states_match, expected answer). Cycling these by item index
-    _CELLS: Tuple[Tuple[str, bool, str], ...] = (
-        ("affirmative", True, "Yes"),
-        ("affirmative", False, "No"),
-        ("negated", True, "No"),
-        ("negated", False, "Yes"),
-    )
-
     # ----- Construction -----
 
     def __init__(self, assistant, config, n_moves: int = 3, verbose: bool = False):
         super().__init__(assistant, config, n_moves, verbose)
-        self._claims: Dict[str, List[str]] = PromptFactory.get_section("verification", "claims")
-        missing = [p for p, _, _ in self._CELLS if p not in self._claims]
-        if missing:
-            raise ValueError(f"prompts.yaml verification.claims is missing polarity {missing}")
-        widths = {p: len(forms) for p, forms in self._claims.items()}
-        if len(set(widths.values())) != 1:
-            raise ValueError(f"Each polarity needs the same number of surface forms, got {widths}")
-
         self._sys_prompt = ""
         self._user_template = ""
 
@@ -56,21 +40,20 @@ class VerificationTest(SingleAskTest):
     # ----- Item generation -----
 
     def build_item(self, idx: int) -> Dict[str, Any]:
-        polarity, states_match, expected = self._CELLS[idx % len(self._CELLS)]
-        forms = self._claims[polarity]
-        form_idx = (idx // len(self._CELLS)) % len(forms)
-
         text_cube = VirtualCube()
         text_cube.scramble(random_seed=idx, n_moves=self.n_moves, exact_depth=True)
         front_text = self._front_text(text_cube)
 
-        if states_match:
+        matched = idx % 2 == 0
+        if matched:
             img_cube = text_cube
+            expected = "Yes"
             mv = None
         else:
             img_cube = text_cube.clone()
             mv = self.item_rng("verification", self.n_moves, idx).choice(self._FRONT_AFFECTING)
             img_cube.apply(mv)
+            expected = "No"
 
         return {
             "index": idx,
@@ -78,10 +61,6 @@ class VerificationTest(SingleAskTest):
             "image": img_cube.to_image(),
             "expected": expected,
             "mismatch_move": mv,
-            "polarity": polarity,
-            "states_match": states_match,
-            "template_id": f"{polarity}:{form_idx}",
-            "claim": forms[form_idx].format(front_face=front_text),
         }
 
     def _front_text(self, cube: VirtualCube) -> str:
@@ -96,7 +75,7 @@ class VerificationTest(SingleAskTest):
     # ----- Prompting -----
 
     def build_prompts(self, item: Dict[str, Any]) -> Tuple[str, str]:
-        return self._sys_prompt, self._user_template.format(claim=item["claim"])
+        return self._sys_prompt, self._user_template.format(front_face=item["front_text"])
 
     def ask_kwargs(self, item: Dict[str, Any]) -> Dict[str, Any]:
         return {"image": item["image"], "max_new_tokens": 2 ** 14}
@@ -113,9 +92,8 @@ class VerificationTest(SingleAskTest):
     ) -> ItemRecord:
         ok = int(prediction is not None and prediction.lower() == item["expected"].lower())
         self._vlog(
-            "Sample %s [%s, match=%s], Expected: %s, Model prediction: %s",
-            item["index"], item["polarity"], item["states_match"],
-            item["expected"], prediction,
+            "Sample %s, Expected: %s, Model prediction: %s",
+            item["index"], item["expected"], prediction,
         )
         return ItemRecord(
             index=item["index"],
@@ -129,17 +107,9 @@ class VerificationTest(SingleAskTest):
                 "gold": item["expected"],
                 "pred": prediction,
                 "ok": ok,
-                "polarity": item["polarity"],
-                "template_id": item["template_id"],
-                "states_match": item["states_match"],
                 "response": response,
             },
-            extra={
-                "ok": ok,
-                "polarity": item["polarity"],
-                "template_id": item["template_id"],
-                "expected": item["expected"],
-            },
+            extra={"ok": ok, "expected": item["expected"]},
         )
 
     # ----- Aggregation -----
@@ -155,8 +125,7 @@ class VerificationTest(SingleAskTest):
                 "generator": "VirtualCube",
                 "scramble_depth": self.n_moves,
                 "front_affecting_mismatch": True,
-                "polarity_reversals": True,
-                "surface_forms_per_polarity": len(next(iter(self._claims.values()))),
+                "seeded_mismatch": True,
             },
         }
 
@@ -171,15 +140,6 @@ class VerificationTest(SingleAskTest):
             metrics["accuracy"], metrics["balanced_accuracy"], metrics["parse_rate"],
             metrics["yes_rate"], confusion["tp"], confusion["tn"], confusion["fp"],
             confusion["fn"], metrics["unparsed"],
-        )
-        for name, m in sorted(metrics["by_polarity"].items()):
-            self._logger.info(
-                "Polarity %-12s n=%-4d acc=%.3f bal_acc=%.3f yes_labels=%.3f",
-                name, m["n"], m["accuracy"], m["balanced_accuracy"], m["yes_label_share"],
-            )
-        self._logger.info(
-            "Max per-template label skew from 50/50: %.3f (target < 0.05)",
-            metrics["max_template_label_skew"],
         )
 
     # ----- Results -----

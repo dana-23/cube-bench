@@ -54,6 +54,22 @@ def test_verification_metrics_match_hand_computation():
     assert scored["parse_rate"] == 0.75
     assert scored["unparsed"] == 1
     assert scored["support"] == {"pos": 2, "neg": 2}
+
+
+def test_group_metrics_split_by_a_field():
+    registry = {
+        "grouped": {
+            "unit": "item",
+            "positive": "Yes",
+            "metrics": [
+                {"group": {"field": "polarity", "key": "by_polarity",
+                           "stats": ["n", "accuracy", "positive_label_share"]}},
+                {"max_group_label_skew": {"field": "template_id",
+                                          "key": "max_template_label_skew"}},
+            ],
+        }
+    }
+    scored = scoring.score("grouped", yes_no_records(), registry=registry)
     assert scored["by_polarity"]["affirmative"]["n"] == 2
     assert scored["max_template_label_skew"] == 0.5
 

@@ -12,17 +12,6 @@ verification:
     - binary_confusion
     - unparsed
     - binary_support
-    - group:
-        field: polarity
-        key: by_polarity
-        stats: [n, accuracy, balanced_accuracy, positive_label_share]
-        names: {positive_label_share: yes_label_share}
-    - group:
-        field: template_id
-        key: by_template
-        stats: [n, accuracy, positive_label_share]
-        names: {positive_label_share: yes_label_share}
-    - max_group_label_skew: {field: template_id, key: max_template_label_skew}
 
 move_effect:
   unit: labels

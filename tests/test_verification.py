@@ -60,55 +60,25 @@ def test_labels_are_balanced_overall(task):
     assert counts["Yes"] == counts["No"] == 60
 
 
-def test_labels_are_balanced_within_each_polarity(task):
-    per_polarity = Counter(
-        (s["polarity"], s["expected"]) for s in _samples(task, 120)
-    )
-    for polarity in ("affirmative", "negated"):
-        assert per_polarity[(polarity, "Yes")] == per_polarity[(polarity, "No")] == 30
-
-
-def test_labels_are_balanced_within_each_template(task):
-    per_template = Counter(
-        (s["template_id"], s["expected"]) for s in _samples(task, 120)
-    )
-    templates = {t for t, _ in per_template}
-    assert len(templates) == 6  # 3 surface forms x 2 polarities
-    for template in templates:
-        assert per_template[(template, "Yes")] == per_template[(template, "No")]
-
-
-def test_both_polarities_are_used_equally(task):
-    counts = Counter(s["polarity"] for s in _samples(task, 120))
-    assert counts["affirmative"] == counts["negated"] == 60
-
-
-# Polarity semantics
-
-def test_negation_inverts_the_expected_answer(task):
-    for sample in _samples(task, 120):
-        claim_is_true = sample["states_match"] == (sample["polarity"] == "affirmative")
-        assert sample["expected"] == ("Yes" if claim_is_true else "No")
+def test_matched_items_answer_yes_and_mismatched_answer_no(task):
+    for sample in _samples(task, 40):
+        matched = sample["mismatch_move"] is None
+        assert sample["expected"] == ("Yes" if matched else "No")
 
 
 def test_mismatched_items_apply_a_front_affecting_move(task):
     for sample in _samples(task, 40):
-        if sample["states_match"]:
+        if sample["index"] % 2 == 0:
             assert sample["mismatch_move"] is None
         else:
             assert sample["mismatch_move"] in front_affecting_moves()
 
 
-def test_claim_text_carries_the_front_face_and_matches_its_polarity(task):
-    for sample in _samples(task, 8):
-        assert sample["front_text"] in sample["claim"]
-        negated_wording = ("NOT" in sample["claim"]
-                           or "does not match" in sample["claim"]
-                           or "inconsistent" in sample["claim"])
-        assert negated_wording == (sample["polarity"] == "negated")
-
-
 # Determinism
+#
+# The mismatch move was drawn from random.SystemRandom before the sampler was
+# seeded, so mismatched items were redrawn on every run and no two runs shared
+# an item set. These guard that regression.
 
 def test_items_are_identical_across_instances(monkeypatch):
     monkeypatch.setattr(verification, "VirtualCube", StubCube)
@@ -121,7 +91,7 @@ def test_items_are_identical_across_instances(monkeypatch):
         first, second = build(idx), build(idx)
         assert first["mismatch_move"] == second["mismatch_move"]
         assert first["image"] == second["image"]
-        assert first["claim"] == second["claim"]
+        assert first["front_text"] == second["front_text"]
 
 
 def test_depth_changes_the_mismatch_draw(monkeypatch):
