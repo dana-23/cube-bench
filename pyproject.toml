@@ -1,7 +1,3 @@
-# =====================
-# file: pyproject.toml
-# =====================
-
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
@@ -13,17 +9,26 @@ requires-python = ">=3.10"
 dependencies = [
   "numpy",
   "matplotlib",
+  "pillow",
   "tqdm",
   "pycuber",
   "kociemba",
   "pyyaml",
+  "python-dotenv",
+  "anthropic",
+  "openai",
   "google-genai",
   "hydra-core>=1.3",
 ]
 readme = "README.md"
+license = { text = "GPL-3.0-or-later" }
+classifiers = [
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+]
 
 [project.scripts]
 cube-bench = "cube_bench.cli:main"
+cube-bench-analyze = "cube_bench.analysis.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -36,7 +41,7 @@ package-dir = {"" = "src"}
 include-package-data = true
 
 [tool.setuptools.package-data]
-"cube_bench" = ["configs/*.yaml", "configs/**/*.yaml", "prompts/*.yaml"]
+"cube_bench" = ["configs/*.yaml", "configs/**/*.yaml", "prompts/*.yaml", "optimal/NOTICE"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -46,16 +51,14 @@ exclude = ["tests*", "docs*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
-# =====================
 # Pylint
-# =====================
 
 [tool.pylint.main]
-# The two-phase solver under optimal/ is vendored from Herbert Kociemba's
-# RubiksCube-TwophaseSolver. It is kept diffable against upstream so it can be
-# re-synced, so its naming and layout are not ours to restyle. Real defects
-# there are still fixed by hand.
-ignore-paths = ['^src/cube_bench/optimal/(?!__init__\.py).*$']
+# Keep the vendored Kociemba solver diffable with upstream; fix defects manually
+# without applying project-wide style rules.
+# The vendored Kociemba solver stays diffable with upstream; build/ is a stale
+# copy of the package that shadows src/ during a recursive run.
+ignore-paths = ['^src/cube_bench/optimal/(?!__init__\.py).*$', '^build/.*$']
 jobs = 0
 
 [tool.pylint.format]
@@ -65,9 +68,8 @@ max-line-length = 120
 # @hydra.main injects the `cfg` argument at call time, so main() is called with
 # no arguments on purpose.
 signature-mutators = ["hydra.main.main"]
-# transformers exposes its model classes through a lazy module __getattr__, which
-# astroid resolves inconsistently: it accepts Gemma3ForConditionalGeneration but
-# not Glm4vMoeForConditionalGeneration, though both exist at runtime.
+# Astroid inconsistently resolves model classes exposed through Transformers'
+# lazy module attributes, although they exist at runtime.
 ignored-modules = ["transformers"]
 
 [tool.pylint.similarities]
@@ -78,13 +80,7 @@ ignore-imports = true
 ignore-signatures = true
 
 [tool.pylint.basic]
-# Domain shorthand that is clearer than a snake_case rewrite would be:
-#   A/B/C/D - the four multiple-choice option letters
-#   L       - the option-letter alphabet, or a line accumulator in the scripts
-#   N       - a sample count
-#   IC      - the set of initially-correct items in the reflection analysis
-# Plus names fixed by an upstream API (the `X = None` optional-import fallbacks,
-# the InternVL3.5 / ABCD model and task names).
+# Preserve domain abbreviations (A-D, L, N, IC) and names fixed by upstream APIs.
 good-names = [
   "i", "j", "k", "n", "m", "d", "f", "r", "s", "v", "ex", "Run", "_",
   "A", "B", "C", "D", "L", "N", "IC",
@@ -92,43 +88,26 @@ good-names = [
   "InternVL3_5Strategy", "_balanced_sample_ABCD",
 ]
 
-[tool.pylint.classes]
-# The reflection evaluation deliberately reuses SolveMovesTest's item builder;
-# these are friend calls inside one package, not reaching into a stranger.
-exclude-protected = [
-  "_asdict", "_fields", "_replace", "_source", "_make", "os._exit",
-  "_build_sample", "_build_prompts",
-]
-
 [tool.pylint.design]
-# The evaluation harness is a registry of many similar model backends and many
-# similar task classes, so wide constructors are the norm here. The widest ones
-# (StepByStepTest, ReflectionTest) take everything past (assistant, config) as
-# keyword-only, so max-positional-arguments stays tight even though max-args is
-# generous -- a long signature that cannot be filled by position is far safer.
+# Evaluation constructors are wide but keep most parameters keyword-only, so the
+# positional limit remains strict.
 max-args = 16
 max-positional-arguments = 6
 max-attributes = 20
 max-returns = 13
+# Metric aggregation names one local per statistic; this ratchets the current
+# worst case rather than inviting new growth.
+max-locals = 34
 min-public-methods = 1
+# BaseTest exposes the run-template hooks plus the shared cube and MCQ helpers.
+max-public-methods = 32
 
 [tool.pylint."messages control"]
 disable = [
-  # Every evaluation loop wraps a model call, whose backends raise anything from
-  # provider SDK errors to CUDA OOM. Catching Exception and recording the sample
-  # as failed is the intended behaviour: one bad sample must not end a long run.
+  # Backend failures are recorded per sample so one provider/CUDA error does not
+  # terminate a long evaluation.
   "broad-exception-caught",
-  # Heavy and optional dependencies (torch, transformers, vLLM, provider SDKs)
-  # are imported inside the strategy that needs them, so the package stays
-  # importable without them installed.
+  # Heavy optional dependencies are imported only inside their strategies.
   "import-outside-toplevel",
-  # Size metrics, disabled rather than given a fake ceiling: each task's run()
-  # is one long linear script (build item -> prompt -> call -> parse -> score ->
-  # record) that reads better whole than split up to satisfy a counter. Current
-  # worst cases: 85 locals, 140 statements, 32 branches (move_effect,
-  # learning_curve, step_by_step). Re-enable these if those get refactored.
-  "too-many-locals",
-  "too-many-statements",
-  "too-many-branches",
   "too-many-lines",
 ]

@@ -1,0 +1,203 @@
+[
+    {
+        "model_name": "mock-model",
+        "test_type": "verification",
+        "timestamp": "<TIMESTAMP>",
+        "average_accuracy": 0.6666666666666666,
+        "num_samples": 24,
+        "metrics": {
+            "accuracy": 0.6666666666666666,
+            "balanced_accuracy": 0.6666666666666667,
+            "parse_rate": 1.0,
+            "parse_violation": 0.0,
+            "yes_rate": 0.3333333333333333,
+            "confusion": {
+                "tp": 6,
+                "tn": 10,
+                "fp": 2,
+                "fn": 6
+            },
+            "unparsed": 0,
+            "support": {
+                "pos": 12,
+                "neg": 12
+            }
+        },
+        "per_item": [
+            {
+                "index": 0,
+                "gold": "Yes",
+                "pred": "Yes",
+                "ok": 1,
+                "response": "Answer: Yes"
+            },
+            {
+                "index": 1,
+                "gold": "No",
+                "pred": "No",
+                "ok": 1,
+                "response": "Answer: No"
+            },
+            {
+                "index": 2,
+                "gold": "Yes",
+                "pred": "No",
+                "ok": 0,
+                "response": "Answer: No"
+            },
+            {
+                "index": 3,
+                "gold": "No",
+                "pred": "No",
+                "ok": 1,
+                "response": "Answer: No"
+            },
+            {
+                "index": 4,
+                "gold": "Yes",
+                "pred": "Yes",
+                "ok": 1,
+                "response": "Answer: Yes"
+            },
+            {
+                "index": 5,
+                "gold": "No",
+                "pred": "No",
+                "ok": 1,
+                "response": "Answer: No"
+            },
+            {
+                "index": 6,
+                "gold": "Yes",
+                "pred": "Yes",
+                "ok": 1,
+                "response": "Answer: Yes"
+            },
+            {
+                "index": 7,
+                "gold": "No",
+                "pred": "No",
+                "ok": 1,
+                "response": "Answer: No"
+            },
+            {
+                "index": 8,
+                "gold": "Yes",
+                "pred": "No",
+                "ok": 0,
+                "response": "Answer: No"
+            },
+            {
+                "index": 9,
+                "gold": "No",
+                "pred": "Yes",
+                "ok": 0,
+                "response": "Answer: Yes"
+            },
+            {
+                "index": 10,
+                "gold": "Yes",
+                "pred": "Yes",
+                "ok": 1,
+                "response": "Answer: Yes"
+            },
+            {
+                "index": 11,
+                "gold": "No",
+                "pred": "No",
+                "ok": 1,
+                "response": "Answer: No"
+            },
+            {
+                "index": 12,
+                "gold": "Yes",
+                "pred": "Yes",
+                "ok": 1,
+                "response": "Answer: Yes"
+            },
+            {
+                "index": 13,
+                "gold": "No",
+                "pred": "No",
+                "ok": 1,
+                "response": "Answer: No"
+            },
+            {
+                "index": 14,
+                "gold": "Yes",
+                "pred": "Yes",
+                "ok": 1,
+                "response": "Answer: Yes"
+            },
+            {
+                "index": 15,
+                "gold": "No",
+                "pred": "No",
+                "ok": 1,
+                "response": "Answer: No"
+            },
+            {
+                "index": 16,
+                "gold": "Yes",
+                "pred": "No",
+                "ok": 0,
+                "response": "Answer: No"
+            },
+            {
+                "index": 17,
+                "gold": "No",
+                "pred": "No",
+                "ok": 1,
+                "response": "Answer: No"
+            },
+            {
+                "index": 18,
+                "gold": "Yes",
+                "pred": "No",
+                "ok": 0,
+                "response": "Answer: No"
+            },
+            {
+                "index": 19,
+                "gold": "No",
+                "pred": "No",
+                "ok": 1,
+                "response": "Answer: No"
+            },
+            {
+                "index": 20,
+                "gold": "Yes",
+                "pred": "No",
+                "ok": 0,
+                "response": "Answer: No"
+            },
+            {
+                "index": 21,
+                "gold": "No",
+                "pred": "Yes",
+                "ok": 0,
+                "response": "Answer: Yes"
+            },
+            {
+                "index": 22,
+                "gold": "Yes",
+                "pred": "No",
+                "ok": 0,
+                "response": "Answer: No"
+            },
+            {
+                "index": 23,
+                "gold": "No",
+                "pred": "No",
+                "ok": 1,
+                "response": "Answer: No"
+            }
+        ],
+        "meta": {
+            "generator": "VirtualCube",
+            "scramble_depth": 3,
+            "front_affecting_mismatch": true,
+            "seeded_mismatch": true
+        }
+    }
+]

@@ -44,8 +44,7 @@ runs/
 artifacts/
 data/
 outputs/
-multirun/
-results/
 
-# Bash scripts (Personel convenience only)
-scripts/
+# Notes
+AGENTS.md
+CLAUDE.md

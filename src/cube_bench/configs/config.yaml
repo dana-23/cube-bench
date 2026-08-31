@@ -3,25 +3,30 @@ defaults:
   - paths: default
   - _self_
 
-# Model name (any registered model in ModelAssistant)
+# Registered ModelAssistant name.
 model: claude-sonnet-4.5
 
-# Backend: hf | vllm
+# Scramble depth; null keeps each evaluation's existing default.
+n_moves: null
+
+# Thinking-token budget; null keeps provider-default dynamic thinking.
+thinking_budget: null
+
+# hf | vllm
 backend: hf
 
-# Global run params
 samples: 10
 verbose: 1 # 0=warnings only, 1=info+sample
 log_file: null
 
-# Build phase: if true, just preload optimal solver tables and exit
+# Preload optimal-solver tables and exit.
 build: false
 
 hydra:
   run:
-    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}-${model}-${test.name}
   sweep:
-    dir: multirun/${now:%Y-%m-%d}/${test.name}
-    subdir: ${hydra.job.num}
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}-sweep
+    subdir: ${hydra.job.num}-${model}-${test.name}
   job:
     chdir: false

@@ -1,0 +1,4 @@
+{"index": 0, "pred": "D", "gold": "A", "raw": "<ANSWER> D </ANSWER>", "latency_ms": <LATENCY>, "usage": {}, "parsed": true}
+{"index": 3, "pred": "A", "gold": "D", "raw": "<ANSWER> A </ANSWER>", "latency_ms": <LATENCY>, "usage": {}, "parsed": true}
+{"index": 4, "pred": "C", "gold": "A", "raw": "<ANSWER> C </ANSWER>", "latency_ms": <LATENCY>, "usage": {}, "parsed": true}
+{"index": 5, "pred": "A", "gold": "B", "raw": "<ANSWER> A </ANSWER>", "latency_ms": <LATENCY>, "usage": {}, "parsed": true}

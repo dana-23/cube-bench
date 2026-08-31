@@ -1,41 +1,20 @@
 name: reflection
 reflection_type: Redacted          # Unguided | Redacted | Unredacted
-prompt_type: image                 # unused by ReflectionTest; draft pass is always "mixed"
 max_reflections: null              # only applies when reflect_all=false (unreachable from here)
-reflection_prompts: null           # null => paths.reflection_prompts
-n_moves: 1                         # unused by ReflectionTest
 
-# Does the reflection prompt show the model the answer it actually gave?
-#   false -> {model_choice} renders as [HIDDEN]
-#   true  -> renders as the letter the draft pass actually produced
+# Show the draft answer letter; false renders ``{model_choice}`` as ``[HIDDEN]``.
 reveal_choice: true
 
-# When does the prompt assert the prior answer was wrong?
-#   always     -> on every item, including ones the model got right
-#   when_wrong -> only on items that were actually wrong (nothing false is ever stated)
-#   never      -> no verdict at all; the model just re-solves. Control arm.
+# ``always`` asserts error on all items; ``when_wrong`` only on errors; ``never``
+# supplies no verdict and acts as the control arm.
 assert_incorrect: always
 
-# Which re-answer prompt is used AFTER the reflection is produced.
-#   legacy  -> arXiv v1: the directive is switched by assert_incorrect. The asserted branch
-#              says "if prior_answer is present, do NOT choose those options"; the un-asserted
-#              branch says "do not change your answer merely because you were asked again".
-#              So `assert_incorrect` moves two factors at once, and OTR is entangled with
-#              instruction-following on an explicit exclusion order.
-#   neutral -> one non-directive re-answer prompt, identical in every arm. Required for any
-#              assert-vs-neutral contrast, and for reading OTR as a property of the model.
-reanswer_mode: legacy
+# ``neutral`` fixes one non-directive re-answer prompt across arms, so
+# ``assert_incorrect`` is the only manipulated factor; this is what the reported
+# factorial used. ``legacy`` reproduces the older directive prompt, under which
+# the assertion also flips an instruction to exclude the prior answer.
+reanswer_mode: neutral
 
-# Reuse a previous run's draft pass instead of re-drafting (the draft is an LLM call at
-# temperature 0.1, so re-running it resamples the initially-correct set = the OTR denominator).
-# Pin sibling arms to one draft to license item-paired McNemar. Accepts a reflection run dir,
-# a draft.json, or a solve_moves_*.json.
+# Reuse a run directory, draft.json, or solve_moves_*.json to keep sibling arms
+# item-paired on the same initially-correct set.
 draft_from: null
-
-# The two arms that reproduce the arXiv v1 reflection results:
-#   always + reveal_choice=false -> the code as copied off the GPU cluster
-#   always + reveal_choice=true  -> what Appendix C.4.2 reads like
-# The wrongness sentence is unconditional in C.4.2, so `always` is correct either way;
-# only reveal_choice is in doubt. On claude-sonnet-4.5 (N=20) `always` and `never`
-# flipped the same number of initially-correct items, so the asserted error does not
-# appear to be what drives OTR.

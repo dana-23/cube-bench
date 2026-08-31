@@ -2,20 +2,15 @@
 
 from __future__ import annotations
 
-import logging
-import random
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from tqdm import tqdm
-
-from cube_bench.core import BaseTest
+from cube_bench.core import ItemRecord, SingleAskTest
+from cube_bench.core import scoring
 from cube_bench.prompts.prompt_factory import PromptFactory
 from cube_bench.sim.cube_simulator import VirtualCube
 
-logger = logging.getLogger(__name__)
 
-
-class VerificationTest(BaseTest):
+class VerificationTest(SingleAskTest):
     """Cross-modal Yes/No consistency using VirtualCube (no datasets)."""
 
     test_type = "verification"
@@ -29,22 +24,24 @@ class VerificationTest(BaseTest):
         "R", "R'", "R2",
     )
 
+    # ----- Construction -----
+
     def __init__(self, assistant, config, n_moves: int = 3, verbose: bool = False):
         super().__init__(assistant, config, n_moves, verbose)
-        self._sys_rng = random.SystemRandom()
+        self._sys_prompt = ""
+        self._user_template = ""
 
-    def _front_text(self, cube: VirtualCube) -> str:
-        try:
-            return cube.front_face()
-        except Exception:
-            try:
-                return cube.observe("text")
-            except Exception:
-                return "<<<unavailable>>>"
+    def desc(self) -> str:
+        return "Verification Test"
 
-    def _build_sample(self, idx: int) -> Dict:
+    def setup(self, num_samples: int) -> None:
+        self._sys_prompt, self._user_template = PromptFactory.get("verification")
+
+    # ----- Item generation -----
+
+    def build_item(self, idx: int) -> Dict[str, Any]:
         text_cube = VirtualCube()
-        text_cube.scramble(random_seed=idx, n_moves=self.n_moves)
+        text_cube.scramble(random_seed=idx, n_moves=self.n_moves, exact_depth=True)
         front_text = self._front_text(text_cube)
 
         matched = idx % 2 == 0
@@ -54,7 +51,7 @@ class VerificationTest(BaseTest):
             mv = None
         else:
             img_cube = text_cube.clone()
-            mv = self._sys_rng.choice(self._FRONT_AFFECTING)
+            mv = self.item_rng("verification", self.n_moves, idx).choice(self._FRONT_AFFECTING)
             img_cube.apply(mv)
             expected = "No"
 
@@ -66,85 +63,88 @@ class VerificationTest(BaseTest):
             "mismatch_move": mv,
         }
 
-    def run(self, num_samples: int) -> Tuple[List[int], float]:
-        sys_prompt, user_tpl = PromptFactory.get("verification")
+    def _front_text(self, cube: VirtualCube) -> str:
+        try:
+            return cube.front_face()
+        except Exception:
+            try:
+                return cube.observe("text")
+            except Exception:
+                return "<<<unavailable>>>"
 
-        accuracies: List[int] = []
-        parsed = 0
-        yes_preds = 0
-        tp = tn = fp = fn = 0
+    # ----- Prompting -----
 
-        for i in tqdm(range(num_samples), desc="Verification Test"):
-            sample = self._build_sample(i)
-            user_prompt = user_tpl.format(front_face=sample["front_text"])
+    def build_prompts(self, item: Dict[str, Any]) -> Tuple[str, str]:
+        return self._sys_prompt, self._user_template.format(front_face=item["front_text"])
 
-            resp = self.ask(
-                user_prompt=user_prompt,
-                system_prompt=sys_prompt,
-                image=sample["image"],
-                max_new_tokens=2**14,
-            )
+    def ask_kwargs(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        return {"image": item["image"], "max_new_tokens": 2 ** 14}
 
-            pred = self.parse_yes_no(resp)
-            ok = int(pred is not None and pred.lower() == sample["expected"].lower())
-            accuracies.append(ok)
+    # ----- Parsing -----
 
-            if pred is not None:
-                parsed += 1
-                if pred.lower() == "yes":
-                    yes_preds += 1
+    def parse(self, response: Optional[str]) -> Optional[str]:
+        return self.parse_yes_no(response)
 
-                exp_yes = sample["expected"].lower() == "yes"
-                pred_yes = pred.lower() == "yes"
+    # ----- Scoring -----
 
-                if exp_yes and pred_yes:
-                    tp += 1
-                elif exp_yes and not pred_yes:
-                    fn += 1
-                elif (not exp_yes) and (not pred_yes):
-                    tn += 1
-                else:
-                    fp += 1
-
-            if self.verbose:
-                logger.info("Sample %s, Expected: %s, Model prediction: %s", sample['index'], sample['expected'], pred)
-
-        total = num_samples if num_samples else 1
-        avg_acc = (sum(accuracies) / total) if accuracies else 0.0
-
-        parse_rate = parsed / total
-        yes_rate = (yes_preds / parsed) if parsed else 0.0
-
-        pos = tp + fn
-        neg = tn + fp
-        tpr = (tp / pos) if pos else 0.0
-        tnr = (tn / neg) if neg else 0.0
-        bal_acc = 0.5 * (tpr + tnr) if (pos or neg) else 0.0
-
-        logger.info(
-            "Verification metrics: acc=%.3f, bal_acc=%.3f, parse_rate=%.3f, yes_rate=%.3f, "
-            "TP=%d TN=%d FP=%d FN=%d, unparsed=%d",
-            avg_acc, bal_acc, parse_rate, yes_rate, tp, tn, fp, fn, total - parsed,
+    def score_item(
+        self, item: Dict[str, Any], prediction: Optional[str], response: Optional[str]
+    ) -> ItemRecord:
+        ok = int(prediction is not None and prediction.lower() == item["expected"].lower())
+        self._vlog(
+            "Sample %s, Expected: %s, Model prediction: %s",
+            item["index"], item["expected"], prediction,
+        )
+        return ItemRecord(
+            index=item["index"],
+            gold=item["expected"],
+            pred=prediction,
+            correct=bool(ok),
+            parsed=prediction is not None,
+            response=response,
+            saved={
+                "index": item["index"],
+                "gold": item["expected"],
+                "pred": prediction,
+                "ok": ok,
+                "response": response,
+            },
+            extra={"ok": ok, "expected": item["expected"]},
         )
 
-        self.save({
-            "average_accuracy": avg_acc,
+    # ----- Aggregation -----
+
+    def aggregate(self, records: List[ItemRecord], num_samples: int) -> Dict[str, Any]:
+        scored = scoring.score(self.test_type, records, total=num_samples or 1)
+        return {
+            "average_accuracy": scored["accuracy"],
             "num_samples": num_samples,
-            "metrics": {
-                "accuracy": avg_acc,
-                "balanced_accuracy": bal_acc,
-                "parse_rate": parse_rate,
-                "parse_violation": 1.0 - parse_rate,
-                "yes_rate": yes_rate,
-                "confusion": {"tp": tp, "tn": tn, "fp": fp, "fn": fn},
-                "unparsed": total - parsed,
-                "support": {"pos": pos, "neg": neg},
-            },
+            "metrics": scored,
+            "per_item": [record.saved for record in records],
             "meta": {
                 "generator": "VirtualCube",
                 "scramble_depth": self.n_moves,
                 "front_affecting_mismatch": True,
+                "seeded_mismatch": True,
             },
-        })
+        }
 
-        return accuracies, avg_acc
+    # ----- Reporting -----
+
+    def summary(self, payload: Dict[str, Any], records: List[ItemRecord]) -> None:
+        metrics = payload["metrics"]
+        confusion = metrics["confusion"]
+        self._logger.info(
+            "Verification metrics: acc=%.3f, bal_acc=%.3f, parse_rate=%.3f, yes_rate=%.3f, "
+            "TP=%d TN=%d FP=%d FN=%d, unparsed=%d",
+            metrics["accuracy"], metrics["balanced_accuracy"], metrics["parse_rate"],
+            metrics["yes_rate"], confusion["tp"], confusion["tn"], confusion["fp"],
+            confusion["fn"], metrics["unparsed"],
+        )
+
+    # ----- Results -----
+
+    def result(
+        self, payload: Dict[str, Any], records: List[ItemRecord]
+    ) -> Tuple[List[int], float]:
+        return [record.extra["ok"] for record in records], payload["average_accuracy"]

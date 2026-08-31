@@ -1,0 +1,137 @@
+[
+    {
+        "model_name": "mock-model",
+        "test_type": "prediction",
+        "timestamp": "<TIMESTAMP>",
+        "prompt_type": "image",
+        "average_accuracy": 0.25,
+        "num_samples": 8,
+        "per_item": [
+            {
+                "id": 0,
+                "pred": "D",
+                "gold": "A",
+                "correct_move": "U",
+                "options": {
+                    "A": "U",
+                    "B": "L2",
+                    "C": "R",
+                    "D": "U2"
+                },
+                "scramble": "D2 B' U'",
+                "ok": 0,
+                "response": "<ANSWER> D </ANSWER>"
+            },
+            {
+                "id": 1,
+                "pred": "B",
+                "gold": "B",
+                "correct_move": "L2",
+                "options": {
+                    "B": "L2",
+                    "A": "B2",
+                    "C": "U",
+                    "D": "F"
+                },
+                "scramble": "U' D' L2",
+                "ok": 1,
+                "response": "<ANSWER> B </ANSWER>"
+            },
+            {
+                "id": 2,
+                "pred": "A",
+                "gold": "C",
+                "correct_move": "L'",
+                "options": {
+                    "C": "L'",
+                    "A": "B2",
+                    "B": "L",
+                    "D": "U"
+                },
+                "scramble": "D2 F L",
+                "ok": 0,
+                "response": "<ANSWER> A </ANSWER>"
+            },
+            {
+                "id": 3,
+                "pred": "D",
+                "gold": "D",
+                "correct_move": "D'",
+                "options": {
+                    "D": "D'",
+                    "A": "L'",
+                    "B": "F",
+                    "C": "B"
+                },
+                "scramble": "U2 L D",
+                "ok": 1,
+                "response": "<ANSWER> D </ANSWER>"
+            },
+            {
+                "id": 4,
+                "pred": "B",
+                "gold": "A",
+                "correct_move": "D2",
+                "options": {
+                    "A": "D2",
+                    "B": "L'",
+                    "C": "D'",
+                    "D": "L"
+                },
+                "scramble": "L2 B2 D2",
+                "ok": 0,
+                "response": "<ANSWER> B </ANSWER>"
+            },
+            {
+                "id": 5,
+                "pred": "D",
+                "gold": "B",
+                "correct_move": "R'",
+                "options": {
+                    "B": "R'",
+                    "A": "R2",
+                    "C": "D'",
+                    "D": "L2"
+                },
+                "scramble": "R2 D2 R",
+                "ok": 0,
+                "response": "<ANSWER> D </ANSWER>"
+            },
+            {
+                "id": 6,
+                "pred": "D",
+                "gold": "C",
+                "correct_move": "U",
+                "options": {
+                    "C": "U",
+                    "A": "L2",
+                    "B": "D",
+                    "D": "F2"
+                },
+                "scramble": "U' F' U'",
+                "ok": 0,
+                "response": "<ANSWER> D </ANSWER>"
+            },
+            {
+                "id": 7,
+                "pred": "A",
+                "gold": "D",
+                "correct_move": "R2",
+                "options": {
+                    "D": "R2",
+                    "A": "F",
+                    "B": "F'",
+                    "C": "R'"
+                },
+                "scramble": "B2 F' R2",
+                "ok": 0,
+                "response": "<ANSWER> A </ANSWER>"
+            }
+        ],
+        "meta": {
+            "n_moves": 3,
+            "generator": "VirtualCube",
+            "prompt_source": "PromptFactory"
+        }
+    }
+]

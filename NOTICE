@@ -1,0 +1,39 @@
+Cube Bench - licensing notice
+=============================
+
+This distribution combines components under different licenses. The
+distribution AS A WHOLE is governed by the GNU General Public License,
+version 3 or later (see LICENSE), because it bundles a GPL-licensed
+optimal Rubik's Cube solver on which the oracle depends.
+
+Components
+----------
+
+1. Cube Bench generator and evaluation harness
+   Everything outside src/cube_bench/optimal/.
+   Copyright (c) 2026 The Cube Bench Authors.
+   Licensed under the MIT License (see LICENSE.MIT).
+
+2. Bundled optimal solver
+   src/cube_bench/optimal/
+   Derived from RubiksCube-OptimalSolver by Herbert Kociemba,
+   https://github.com/hkociemba/RubiksCube-OptimalSolver
+   Upstream declares "GNU General Public License v3 or later (GPLv3+)".
+   See src/cube_bench/optimal/NOTICE for the modifications made here.
+
+3. Benchmark data and prompts
+   Licensed under Creative Commons Attribution 4.0 International
+   (see LICENSE.CC-BY-4.0).
+
+Effective terms
+---------------
+
+Component 2 is GPL-licensed and the oracle depends on it, so
+redistribution of this package as a whole is subject to the GPL v3 or
+later. The MIT grant on component 1 remains available to anyone who
+takes that code without the bundled solver.
+
+The oracle distance d(s) is implementation-independent: any correct
+optimal solver returns the same distance for the same state. Replacing
+component 2 with a non-copyleft implementation would therefore change
+the licensing of this package without changing any reported result.

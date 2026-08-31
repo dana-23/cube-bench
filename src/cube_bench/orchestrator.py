@@ -11,7 +11,6 @@ from omegaconf import DictConfig
 
 from cube_bench.config import Config
 from cube_bench.evaluations import (
-    InvarianceSweepTest,
     LearningCurveTest,
     MoveEffectTest,
     ReconstructionTest,
@@ -42,34 +41,32 @@ class TestOrchestrator:
     ) -> Any:
         """Construct and run the evaluation named by ``test_cfg.name``."""
         name = test_cfg.name
+        common: dict[str, Any] = {"verbose": verbose}
+        if self.config.n_moves is not None:
+            common["n_moves"] = self.config.n_moves
 
         if name == "prediction":
             test = SolveMovesTest(
                 self.assistant, self.config,
                 prompt_type=test_cfg.prompt_type,
-                n_moves=test_cfg.n_moves,
-                verbose=verbose,
+                **common,
             )
 
         elif name == "verification":
             test = VerificationTest(
                 self.assistant, self.config,
-                n_moves=test_cfg.n_moves,
-                verbose=verbose,
+                **common,
             )
 
         elif name == "reconstruction":
             test = ReconstructionTest(
                 self.assistant, self.config,
-                n_moves=test_cfg.n_moves,
-                verbose=verbose,
+                **common,
             )
 
         elif name == "step-by-step":
             test = StepByStepTest(
                 self.assistant, self.config,
-                n_moves=test_cfg.n_moves,
-                verbose=verbose,
                 idk_enabled=test_cfg.idk_enabled,
                 idk_weight=test_cfg.idk_weight,
                 idk_policy=test_cfg.idk_policy,
@@ -82,53 +79,36 @@ class TestOrchestrator:
                 checkpoint_dir=test_cfg.get("checkpoint_dir", None),
                 seed_run=test_cfg.get("seed_run", None),
                 seed_prefix=test_cfg.get("seed_prefix", 1),
+                **common,
             )
 
         elif name == "learning-curve":
             test = LearningCurveTest(
                 self.assistant, self.config,
-                n_moves=test_cfg.n_moves,
                 max_attempts=test_cfg.max_attempts,
                 accept_progress=test_cfg.accept_progress,
-                verbose=verbose,
+                **common,
             )
 
         elif name == "move-effect":
             test = MoveEffectTest(
                 self.assistant, self.config,
-                n_moves=test_cfg.n_moves,
-                verbose=verbose,
-            )
-
-        elif name == "invariance-sweep":
-            test = InvarianceSweepTest(
-                self.assistant, self.config,
-                n_moves=test_cfg.n_moves,
-                verbose=verbose,
-                balance_gold_letters=test_cfg.balance_gold_letters,
-                add_labels=test_cfg.add_labels,
-                max_new_tokens=test_cfg.max_new_tokens,
+                **common,
             )
 
         elif name == "reflection":
-            rp = (
-                Path(test_cfg.reflection_prompts)
-                if test_cfg.get("reflection_prompts")
-                else (reflection_prompts_default
-                      or (self.config.prompts_path.parent / "reflection.yaml"))
-            )
+            rp = reflection_prompts_default or (self.config.prompts_path.parent / "reflection.yaml")
             test = ReflectionTest(
                 assistant=self.assistant,
                 config=self.config,
                 reflection_prompts=rp,
                 reflection_type=test_cfg.reflection_type,
-                prompt_type=test_cfg.prompt_type,
                 max_reflections=test_cfg.max_reflections,
                 reveal_choice=test_cfg.get("reveal_choice", False),
                 assert_incorrect=test_cfg.get("assert_incorrect", "always"),
-                reanswer_mode=test_cfg.get("reanswer_mode", "legacy"),
+                reanswer_mode=test_cfg.get("reanswer_mode", "neutral"),
                 draft_from=test_cfg.get("draft_from", None),
-                verbose=verbose,
+                **common,
             )
 
         else:

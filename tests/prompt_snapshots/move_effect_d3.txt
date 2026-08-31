@@ -1,0 +1,129 @@
+===== call 0 system =====
+You are an expert Rubik's Cube evaluator. The cube is scrambled.
+For EACH option (A-D), label how it changes distance-to-solved:
+DECREASE, NO_CHANGE, INCREASE.
+
+Rules:
+- Textual cube state is ground truth; ignore image.
+- Use centers to map colors to faces.
+- Output exactly four lines <A> ... </A> ... <D> ... </D>
+
+===== call 0 user =====
+**Face Centers:**
+U: yellow
+R: orange
+F: green
+D: white
+L: red
+B: blue
+
+**Textual Cube State:**
+         [r][y][y]
+         [r][y][y]
+         [o][y][y]
+[b][b][g][w][r][r][g][g][g][o][o][y]
+[w][r][r][g][g][g][o][o][y][b][b][g]
+[w][o][o][b][b][b][r][r][y][b][b][g]
+         [w][w][w]
+         [w][w][w]
+         [r][o][o]
+
+
+**Candidate Moves:**
+A: U2
+B: U
+C: R'
+D: U'
+
+Output exactly:
+<A> DECREASE|NO_CHANGE|INCREASE </A>
+<B> DECREASE|NO_CHANGE|INCREASE </B>
+<C> DECREASE|NO_CHANGE|INCREASE </C>
+<D> DECREASE|NO_CHANGE|INCREASE </D>
+
+===== call 1 system =====
+You are an expert Rubik's Cube evaluator. The cube is scrambled.
+For EACH option (A-D), label how it changes distance-to-solved:
+DECREASE, NO_CHANGE, INCREASE.
+
+Rules:
+- Textual cube state is ground truth; ignore image.
+- Use centers to map colors to faces.
+- Output exactly four lines <A> ... </A> ... <D> ... </D>
+
+===== call 1 user =====
+**Face Centers:**
+U: yellow
+R: orange
+F: green
+D: white
+L: red
+B: blue
+
+**Textual Cube State:**
+         [w][y][y]
+         [w][y][y]
+         [w][y][y]
+[g][g][g][r][r][r][g][g][g][o][o][o]
+[r][r][r][b][g][g][o][o][o][b][b][g]
+[b][b][b][o][o][o][b][b][b][r][r][r]
+         [y][w][w]
+         [y][w][w]
+         [y][w][w]
+
+
+**Candidate Moves:**
+A: L2
+B: R'
+C: L
+D: B2
+
+Output exactly:
+<A> DECREASE|NO_CHANGE|INCREASE </A>
+<B> DECREASE|NO_CHANGE|INCREASE </B>
+<C> DECREASE|NO_CHANGE|INCREASE </C>
+<D> DECREASE|NO_CHANGE|INCREASE </D>
+
+===== call 2 system =====
+You are an expert Rubik's Cube evaluator. The cube is scrambled.
+For EACH option (A-D), label how it changes distance-to-solved:
+DECREASE, NO_CHANGE, INCREASE.
+
+Rules:
+- Textual cube state is ground truth; ignore image.
+- Use centers to map colors to faces.
+- Output exactly four lines <A> ... </A> ... <D> ... </D>
+
+===== call 2 user =====
+**Face Centers:**
+U: yellow
+R: orange
+F: green
+D: white
+L: red
+B: blue
+
+**Textual Cube State:**
+         [g][y][y]
+         [b][y][y]
+         [b][r][r]
+[o][r][r][y][g][g][y][o][o][b][b][w]
+[o][r][r][y][g][g][y][o][o][b][b][w]
+[w][w][w][o][g][g][y][r][r][g][g][r]
+         [b][o][o]
+         [b][w][w]
+         [b][w][w]
+
+
+**Candidate Moves:**
+A: R2
+B: L
+C: L2
+D: L'
+
+Output exactly:
+<A> DECREASE|NO_CHANGE|INCREASE </A>
+<B> DECREASE|NO_CHANGE|INCREASE </B>
+<C> DECREASE|NO_CHANGE|INCREASE </C>
+<D> DECREASE|NO_CHANGE|INCREASE </D>
+

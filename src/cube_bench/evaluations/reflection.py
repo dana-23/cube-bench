@@ -14,6 +14,9 @@ import yaml
 from tqdm import tqdm
 
 from cube_bench.core import BaseTest
+from cube_bench.core.results import (
+    read_jsonl, timestamped_run_dir, write_json, write_jsonl,
+)
 from cube_bench.evaluations.solve_moves import SolveMovesTest
 
 logger = logging.getLogger(__name__)
@@ -22,28 +25,6 @@ logger = logging.getLogger(__name__)
 ASSERT_MODES = ("always", "when_wrong", "never")
 REANSWER_MODES = ("legacy", "neutral")
 
-
-def _load_reflection_bundle(
-    path: Path, reflection_type: str, needs_open: bool = False
-) -> Dict[str, str]:
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if reflection_type not in data:
-        raise KeyError(f"'{reflection_type}' not in {list(data.keys())}")
-    bundle = data[reflection_type]
-    # The *_open pair is only read when some item is allowed to go un-asserted.
-    required = {"system", "user"} | ({"system_open", "user_open"} if needs_open else set())
-    if not isinstance(bundle, dict) or not required.issubset(bundle):
-        raise ValueError(f"Reflection bundle must have {sorted(required)}.")
-    return bundle
-
-
-# The re-answer directive. `legacy` reproduces the arXiv v1 harness, where the directive is
-# switched by whether the reflection asserted error: the asserted branch orders the model to
-# drop its prior answer, the un-asserted branch discourages changing it. That makes any
-# assert-vs-neutral contrast a two-factor change, and it confounds OTR with instruction-
-# following. `neutral` holds one non-directive prompt fixed across every arm, so
-# `assert_incorrect` becomes the single manipulated factor. Everything below the phase
-# paragraph is byte-identical across modes.
 _LEGACY_PHASE_ASSERTED = (
     "You are in a RE-ANSWER phase: use the provided reflection to avoid the prior mistake.\n"
     "The reflection may be JSON (e.g., keys: diagnosis, keywords, avoid_rules, eval, recommend, prior_answer)\n"
@@ -60,6 +41,22 @@ _NEUTRAL_PHASE = (
 )
 
 
+def _load_reflection_bundle(
+    path: Path, reflection_type: str, needs_open: bool = False
+) -> Dict[str, str]:
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if reflection_type not in data:
+        raise KeyError(f"'{reflection_type}' not in {list(data.keys())}")
+    bundle = data[reflection_type]
+    # The *_open pair is only read when some item is allowed to go un-asserted.
+    required = {"system", "user"} | ({"system_open", "user_open"} if needs_open else set())
+    if not isinstance(bundle, dict) or not required.issubset(bundle):
+        raise ValueError(f"Reflection bundle must have {sorted(required)}.")
+    return bundle
+
+
+# ``legacy`` changes the directive with assertion status; ``neutral`` fixes one
+# non-directive prompt so ``assert_incorrect`` is the only manipulated factor.
 def _reanswer_bundle(assert_wrong: bool = True, mode: str = "legacy") -> dict:
     if mode not in REANSWER_MODES:
         raise ValueError(f"reanswer_mode must be one of {REANSWER_MODES}")
@@ -101,26 +98,10 @@ def _count_tokens(usage: Dict[str, Any]) -> int:
     return s
 
 
-def _save_jsonl(path: Path, rows: List[Dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        for r in rows:
-            f.write(json.dumps(r, ensure_ascii=False) + "\n")
-
-
-def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
-    return [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
-
-
 def _draft_from_reflection_dir(run_dir: Path) -> List[Dict[str, Any]]:
-    """Recover a draft pass from a completed reflection run.
-
-    Runs made before `per_item` was added to SolveMovesTest.save() have no draft file, but
-    reflections.jsonl carries (index, prior_answer, initially_correct) and reanswers.jsonl
-    carries the gold letter, which is the whole draft.
-    """
-    refl = _read_jsonl(run_dir / "reflections.jsonl")
-    gold = {r["index"]: r.get("gold") for r in _read_jsonl(run_dir / "reanswers.jsonl")}
+    """Recover legacy draft data by joining reflection and re-answer JSONL files."""
+    refl = read_jsonl(run_dir / "reflections.jsonl")
+    gold = {r["index"]: r.get("gold") for r in read_jsonl(run_dir / "reanswers.jsonl")}
     return sorted(
         (
             {
@@ -160,14 +141,11 @@ def _resolve_draft(draft_from: Path) -> Tuple[List[Dict[str, Any]], str]:
 
 
 class ReflectionTest(BaseTest):
-    """Maximum-fairness reflection/re-answer evaluation.
-
-    Modes:
-      - reflect_all=True  (default): paired, fair comparison on the *same* set.
-      - reflect_all=False: wrong-only quick pass for Error-Fix Rate (EFR).
-    """
+    """Run paired all-item or wrong-only reflection and re-answer evaluations."""
 
     test_type = "reflection"
+
+    # ----- Construction -----
 
     def __init__(
         self,
@@ -175,8 +153,8 @@ class ReflectionTest(BaseTest):
         config,
         *,
         reflection_prompts: Path,
+        n_moves: int = 1,
         reflection_type: str = "Unredacted",
-        prompt_type: str = "image",
         max_reflections: Optional[int] = None,
         results_subdir: str = "reflection",
         verbose: bool = False,
@@ -186,14 +164,13 @@ class ReflectionTest(BaseTest):
         reanswer_mode: str = "legacy",
         draft_from: Optional[Path] = None,
     ):
-        super().__init__(assistant, config, n_moves=1, verbose=verbose)
+        super().__init__(assistant, config, n_moves=n_moves, verbose=verbose)
         if assert_incorrect not in ASSERT_MODES:
             raise ValueError(f"assert_incorrect must be one of {ASSERT_MODES}")
         if reanswer_mode not in REANSWER_MODES:
             raise ValueError(f"reanswer_mode must be one of {REANSWER_MODES}")
         self.reflection_prompts = Path(reflection_prompts)
         self.reflection_type = reflection_type
-        self.prompt_type = prompt_type
         self.max_reflections = max_reflections
         self.reflect_all = reflect_all
         self.reveal_choice = reveal_choice
@@ -203,10 +180,7 @@ class ReflectionTest(BaseTest):
         self.results_root = Path(config.results_dir) / results_subdir
 
     def _make_run_dir(self, model_name: str) -> Path:
-        ts = time.strftime("%Y%m%d_%H%M%S")
-        out = self.results_root / f"{model_name}_{self.reflection_type}_{ts}"
-        out.mkdir(parents=True, exist_ok=True)
-        return out
+        return timestamped_run_dir(self.results_root, model_name, self.reflection_type)
 
     def _ask_with_usage(
         self,
@@ -219,7 +193,7 @@ class ReflectionTest(BaseTest):
     ) -> Tuple[str, Dict[str, int], int]:
         """Returns (text, usage_dict, latency_ms) — robust to strategy return shape."""
         t0 = time.perf_counter()
-        out = self.assistant.generate(
+        out = self._generate(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
             image=image,
@@ -235,24 +209,64 @@ class ReflectionTest(BaseTest):
                 usage = out[1]
         return text, usage, dt_ms
 
+    # ----- Run -----
+
     def run(self, num_samples: int) -> Dict[str, Any]:
-        logger.info("=" * 80)
-        logger.info("Running %s Reflection", self.reflection_type)
-        logger.info("=" * 80)
+        """Run the draft, reflection and re-answer passes.
 
-        model_name = getattr(self.assistant, "model_name", None) or self.assistant.get_name()
-        if callable(model_name):
-            model_name = model_name()
-        out_dir = self._make_run_dir(str(model_name))
+        This overrides the ``BaseTest`` template rather than filling in its hooks:
+        the unit of work here is a pass over the whole dataset, not an item, and
+        the draft pass is resumable from a sibling arm's run directory.
+        """
+        self._logger.info("=" * 80)
+        self._logger.info("Running %s Reflection", self.reflection_type)
+        self._logger.info("=" * 80)
 
-        # 1) Draft pass via SolveMovesTest (VirtualCube, no dataset dependency)
+        model_name = self.assistant.get_name()
+        out_dir = self._make_run_dir(model_name)
+
         solver = SolveMovesTest(
             assistant=self.assistant,
             config=self.config,
             prompt_type="mixed",
-            n_moves=1,
+            n_moves=self.n_moves,
             verbose=self.verbose,
         )
+        acc_bits, preds, wrong, draft_source, n_draft_unparsed = self._draft_phase(
+            solver, num_samples, out_dir
+        )
+
+        n_items = len(acc_bits)
+        all_indices = list(range(n_items))
+        reflect_indices = self._select_reflect_indices(all_indices, wrong)
+
+        if not reflect_indices:
+            return self._empty_summary(
+                model_name, out_dir, acc_bits, n_items, draft_source, n_draft_unparsed
+            )
+
+        reflections, ref_tokens, ref_latency = self._reflection_phase(
+            solver, reflect_indices, acc_bits, preds, out_dir
+        )
+        reanswers, re_tokens, re_latency = self._reanswer_phase(solver, reflections, out_dir)
+
+        return self._summarize(
+            model_name=model_name,
+            out_dir=out_dir,
+            acc_bits=acc_bits,
+            all_indices=all_indices,
+            reflect_indices=reflect_indices,
+            reanswers=reanswers,
+            draft_source=draft_source,
+            n_draft_unparsed=n_draft_unparsed,
+            extra_tokens=ref_tokens + re_tokens,
+            extra_latency_ms=ref_latency + re_latency,
+        )
+
+    # ----- Phase 1: draft -----
+
+    def _draft_phase(self, solver, num_samples, out_dir):
+        """Produce or reload the draft answers every sibling arm is paired on."""
         if self.draft_from:
             per_item, draft_source = _resolve_draft(self.draft_from)
             if len(per_item) < num_samples or [r["id"] for r in per_item[:num_samples]] != list(range(num_samples)):
@@ -260,34 +274,29 @@ class ReflectionTest(BaseTest):
                     f"Cached draft {draft_source} does not cover items 0..{num_samples - 1}."
                 )
             per_item = per_item[:num_samples]
-            # The items are seeded by index, so a cached draft is only reusable if the
-            # regenerated item matches. Guards against an n_moves / generator drift.
+            # Reject cached drafts when seeded item generation has drifted.
             for r in per_item:
-                gold = solver._build_sample(r["id"])["correct_letter"]
+                gold = solver.correct_letter(r["id"])
                 if r["gold"] != gold:
                     raise ValueError(
                         f"Draft item {r['id']} gold={r['gold']} but regenerates as {gold}; "
                         f"the cached draft was built from different items."
                     )
-            # A draft item can lack a predicted letter for two very different reasons.
             unparsed = [r["id"] for r in per_item if r["pred"] is None]
             if self.reveal_choice and unparsed:
                 if len(unparsed) == len(per_item):
-                    # Every pred is null => the source ran with reveal_choice=false.
                     raise ValueError(
                         f"reveal_choice=true needs the draft's predicted letters, but every item in "
                         f"{draft_source} has pred=null — that draft came from a reveal_choice=false run."
                     )
-                # An initially-correct item with no parsed answer would corrupt the OTR
-                # denominator: we would assert it was right yet have no choice to reveal.
+                # Correct items without a parsed answer invalidate the OTR denominator.
                 if corrupt := [r["id"] for r in per_item if r["pred"] is None and r["ok"]]:
                     raise ValueError(
                         f"Draft items {corrupt} are marked initially-correct but have no parsed "
                         f"answer in {draft_source}; the OTR denominator would be corrupt."
                     )
-                # Otherwise the draft response simply failed to parse. Mirror the uncached path,
-                # which renders these as '[HIDDEN]'. All are initially-wrong, so OTR is unaffected.
-                logger.warning(
+                # Unparsed wrong answers mirror uncached ``[HIDDEN]`` prompts and do not affect OTR.
+                self._logger.warning(
                     "[Reflection] %d/%d draft answers did not parse (ids %s). They render as "
                     "'[HIDDEN]' in the reveal prompt, exactly as an uncached run would. All are "
                     "initially-wrong, so the OTR denominator (%d items) is unaffected; they sit in "
@@ -298,71 +307,80 @@ class ReflectionTest(BaseTest):
             acc_bits = [int(r["ok"]) for r in per_item]
             preds = [r["pred"] for r in per_item]
             wrong = [(r["pred"], r["id"]) for r in per_item if not r["ok"]]
-            logger.info(
+            self._logger.info(
                 "[Reflection] draft pass loaded from %s — %d items, InitAcc=%.3f, no draft calls made.",
                 draft_source, num_samples, sum(acc_bits) / num_samples,
             )
         else:
             wrong, acc_bits, preds = solver.run(num_samples=num_samples)
             per_item = [
-                {"id": i, "pred": preds[i], "gold": solver._build_sample(i)["correct_letter"], "ok": int(acc_bits[i])}
+                {"id": i, "pred": preds[i], "gold": solver.correct_letter(i), "ok": int(acc_bits[i])}
                 for i in range(len(acc_bits))
             ]
             draft_source = "fresh"
             n_draft_unparsed = sum(1 for p in preds if p is None)
 
-        # Always persist the draft so sibling arms can pin to this exact initially-correct set.
-        (out_dir / "draft.json").write_text(
-            json.dumps({"source": draft_source, "num_samples": num_samples, "per_item": per_item}, indent=2),
-            encoding="utf-8",
+        # Persist the draft so sibling arms share the same initially-correct set.
+        write_json(
+            out_dir / "draft.json",
+            {"source": draft_source, "num_samples": num_samples, "per_item": per_item},
         )
 
-        n_items = len(acc_bits)
-        all_indices = list(range(n_items))
+        return acc_bits, preds, wrong, draft_source, n_draft_unparsed
 
+    # ----- Phase selection -----
+
+    def _select_reflect_indices(self, all_indices, wrong):
+        """Which items get reflected on: everything, or only the initial errors."""
         if self.reflect_all:
-            reflect_indices = all_indices
-        else:
-            reflect_indices = [idx for (_pred, idx) in wrong]
-            if self.max_reflections is not None and len(reflect_indices) > self.max_reflections:
-                reflect_indices = reflect_indices[: self.max_reflections]
-                logger.info("Capped reflections to %d items (wrong-only).", self.max_reflections)
+            return all_indices
+        reflect_indices = [idx for (_pred, idx) in wrong]
+        if self.max_reflections is not None and len(reflect_indices) > self.max_reflections:
+            reflect_indices = reflect_indices[: self.max_reflections]
+            self._logger.info(
+                "Capped reflections to %d items (wrong-only).", self.max_reflections)
+        return reflect_indices
 
-        if not reflect_indices:
-            init_acc = round(sum(acc_bits) / n_items, 4) if n_items else 0.0
-            summary = {
-                "model": model_name,
-                "reflection_type": self.reflection_type,
-                "reflect_all": self.reflect_all,
-                "reveal_choice": self.reveal_choice,
-                "assert_incorrect": self.assert_incorrect,
-                "reanswer_mode": self.reanswer_mode,
-                "draft_source": draft_source,
-                "n_draft_unparsed": n_draft_unparsed,
-                "n_items": n_items,
-                "n_reflected": 0,
-                "initial_accuracy": init_acc,
-                "final_accuracy_over_all": init_acc if self.reflect_all else None,
-                "final_accuracy_over_reflected": init_acc if not self.reflect_all else None,
-                "error_fix_rate": None,
-                "error_fix_rate_ci95": None,
-                "overthink_rate": None,
-                "overthink_rate_ci95": None,
-                "paired_net_gain_over_all": 0.0,
-                "paired_net_gain_over_reflected": 0.0,
-                "parse_rate": 1.0,
-                "delta_tokens_total": 0,
-                "delta_tokens_per_item": 0,
-                "delta_latency_ms_total": 0,
-                "delta_latency_ms_per_item": 0,
-                "run_dir": str(out_dir),
-                "notes": "No items to reflect.",
-            }
-            (out_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-            logger.info("[Reflection] nothing to reflect; InitAcc=%.3f", init_acc)
-            return summary
+    def _empty_summary(self, model_name, out_dir, acc_bits, n_items, draft_source,
+                       n_draft_unparsed):
+        """Summary for a run with nothing to reflect on."""
+        init_acc = round(sum(acc_bits) / n_items, 4) if n_items else 0.0
+        summary = {
+            "model": model_name,
+            "reflection_type": self.reflection_type,
+            "reflect_all": self.reflect_all,
+            "reveal_choice": self.reveal_choice,
+            "assert_incorrect": self.assert_incorrect,
+            "reanswer_mode": self.reanswer_mode,
+            "draft_source": draft_source,
+            "n_draft_unparsed": n_draft_unparsed,
+            "n_items": n_items,
+            "n_reflected": 0,
+            "initial_accuracy": init_acc,
+            "final_accuracy_over_all": init_acc if self.reflect_all else None,
+            "final_accuracy_over_reflected": init_acc if not self.reflect_all else None,
+            "error_fix_rate": None,
+            "error_fix_rate_ci95": None,
+            "overthink_rate": None,
+            "overthink_rate_ci95": None,
+            "paired_net_gain_over_all": 0.0,
+            "paired_net_gain_over_reflected": 0.0,
+            "parse_rate": 1.0,
+            "delta_tokens_total": 0,
+            "delta_tokens_per_item": 0,
+            "delta_latency_ms_total": 0,
+            "delta_latency_ms_per_item": 0,
+            "run_dir": str(out_dir),
+            "notes": "No items to reflect.",
+        }
+        write_json(out_dir / "summary.json", summary)
+        self._logger.info("[Reflection] nothing to reflect; InitAcc=%.3f", init_acc)
+        return summary
 
-        # 2) Reflection pass
+    # ----- Phase 2: reflect -----
+
+    def _reflection_phase(self, solver, reflect_indices, acc_bits, preds, out_dir):
+        """Ask the model to reconsider each drafted answer."""
         bundle = _load_reflection_bundle(
             self.reflection_prompts,
             self.reflection_type,
@@ -372,7 +390,7 @@ class ReflectionTest(BaseTest):
         ref_tokens = ref_latency = 0
 
         for idx in tqdm(reflect_indices, desc=f"Reflect({self.reflection_type})"):
-            sample = solver._build_sample(idx)
+            sample = solver.build_item(idx)
 
             assert_wrong = self.assert_incorrect == "always" or (
                 self.assert_incorrect == "when_wrong" and not acc_bits[idx]
@@ -395,7 +413,6 @@ class ReflectionTest(BaseTest):
                 user_prompt=user,
                 image=sample["image"],
                 max_new_tokens=2**16,
-                temperature=0.4,
             )
             ref_tokens += _count_tokens(usage)
             ref_latency += dt_ms
@@ -409,16 +426,21 @@ class ReflectionTest(BaseTest):
                 "usage": usage,
             })
 
-        _save_jsonl(out_dir / "reflections.jsonl", reflections)
+        write_jsonl(out_dir / "reflections.jsonl", reflections)
 
-        # 3) Re-answer pass
+        return reflections, ref_tokens, ref_latency
+
+    # ----- Phase 3: re-answer -----
+
+    def _reanswer_phase(self, solver, reflections, out_dir):
+        """Collect a fresh answer conditioned on each reflection."""
         reanswers: List[Dict[str, Any]] = []
         re_tokens = re_latency = 0
 
         for r in tqdm(reflections, desc="Reanswer"):
             idx = r["index"]
             reask = _reanswer_bundle(assert_wrong=r["asserted_incorrect"], mode=self.reanswer_mode)
-            sample = solver._build_sample(idx)
+            sample = solver.build_item(idx)
             reply, usage, dt_ms = self._ask_with_usage(
                 system_prompt=reask["system"],
                 user_prompt=reask["user"].format(
@@ -446,9 +468,15 @@ class ReflectionTest(BaseTest):
                 "parsed": pred in {"A", "B", "C", "D"},
             })
 
-        _save_jsonl(out_dir / "reanswers.jsonl", reanswers)
+        write_jsonl(out_dir / "reanswers.jsonl", reanswers)
 
-        # 4) Metrics
+        return reanswers, re_tokens, re_latency
+
+    # ----- Aggregation -----
+
+
+    def _paired_outcomes(self, acc_bits, all_indices, reanswers):
+        """Per-item correctness before and after reflecting, plus whether it parsed."""
         before = {i: int(acc_bits[i]) for i in all_indices}
         after: Dict[int, int] = {}
         parsed: Dict[int, bool] = {}
@@ -465,6 +493,13 @@ class ReflectionTest(BaseTest):
                     after[i] = before[i]
                     parsed[i] = True
 
+        return before, after, parsed
+
+    def _summarize(self, *, model_name, out_dir, acc_bits, all_indices, reflect_indices,
+                   reanswers, draft_source, n_draft_unparsed, extra_tokens, extra_latency_ms):
+        """Derive, log and persist the run summary."""
+        n_items = len(acc_bits)
+        before, after, parsed = self._paired_outcomes(acc_bits, all_indices, reanswers)
         n_reflected = len(reflect_indices)
         init_acc = sum(before.values()) / n_items if n_items else 0.0
         final_acc_all = (sum(after[i] for i in all_indices) / n_items) if self.reflect_all else float("nan")
@@ -492,8 +527,6 @@ class ReflectionTest(BaseTest):
             if n_reflected else 1.0
         )
 
-        extra_tokens = ref_tokens + re_tokens
-        extra_latency_ms = ref_latency + re_latency
         delta_tokens_per_item = int(round(extra_tokens / n_reflected)) if n_reflected else 0
         delta_latency_ms_per_item = int(round(extra_latency_ms / n_reflected)) if n_reflected else 0
 
@@ -529,10 +562,10 @@ class ReflectionTest(BaseTest):
             "run_dir": str(out_dir),
         }
 
-        (out_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        write_json(out_dir / "summary.json", summary)
 
         if self.reflect_all:
-            logger.info(
+            self._logger.info(
                 "[Reflect-ALL/%s] N=%d | InitAcc=%.3f | FinalAcc=%.3f (CI95 %.3f–%.3f) | "
                 "EFR=%.3f (%.3f–%.3f) | OTR=%.3f (%.3f–%.3f) | PNG=%.3f | Parse=%.1f%% | "
                 "ΔTok/it=%d | ΔLat/it=%dms",
@@ -541,7 +574,7 @@ class ReflectionTest(BaseTest):
                 png_over_all, 100 * parse_rate, delta_tokens_per_item, delta_latency_ms_per_item,
             )
         else:
-            logger.info(
+            self._logger.info(
                 "[Reflect-WRONG/%s] N=%d Reflected=%d | InitAcc=%.3f | FinalAcc(reflected)=%.3f | "
                 "EFR=%.3f (%.3f–%.3f) | PNG(reflected)=%.3f | Parse=%.1f%% | "
                 "ΔTok/it=%d | ΔLat/it=%dms",

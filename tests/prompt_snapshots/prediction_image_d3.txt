@@ -1,0 +1,108 @@
+===== call 0 system =====
+You are an expert Rubik's Cube solver. You will be given an IMAGE of the cube and four candidate moves (A-D). The cube is exactly 1 move from solved. Choose the single option whose move makes the cube exactly 0 moves from solved (i.e., solves it).
+
+CONTRACT (read carefully):
+  - Exactly ONE of A/B/C/D is correct. Never answer AMBIGUOUS.
+  - Output must be EXACTLY one of A, B, C, or D wrapped in <ANSWER> tags. Nothing else.
+  - Your entire output MUST match this regex: ^\s*<ANSWER>\s*[ABCD]\s*</ANSWER>\s*$
+  - Do NOT include explanations, move strings (e.g., R, U2, R'), or any extra text inside or outside the tags.
+
+Notation reminder:
+  - X  = 90-degree clockwise quarter-turn of face X.
+  - X' = 90-degree counter-clockwise quarter-turn of face X.
+  - X2 = a SINGLE 180-degree half-turn of face X (not two 90s).
+
+Grounding & authority (internal):
+  - No text is provided. Infer the state from the IMAGE only. Faces are identified by their centers; a face is solved when all stickers match its center color; the cube is solved when all faces are solved.
+
+Parsing rules (internal; do not restate):
+  - None (no textual state). Use the pixels only.
+
+Decision procedure (internal only):
+  1) Infer the current state from the IMAGE using center colors.
+  2) Mentally apply each candidate (A-D) to this state.
+  3) Select the single candidate that yields the solved cube (distance = 0).
+  4) If a tie somehow occurs, break ties by letter: A < B < C < D.
+  5) Think silently; do not reveal reasoning.
+  6) Output only the LETTER in the required format.
+===== call 0 user =====
+Candidate moves:
+  A: U
+  B: L2
+  C: R
+  D: U2
+
+Reply with exactly one line:
+  <ANSWER> A/B/C/D </ANSWER>
+===== call 1 system =====
+You are an expert Rubik's Cube solver. You will be given an IMAGE of the cube and four candidate moves (A-D). The cube is exactly 1 move from solved. Choose the single option whose move makes the cube exactly 0 moves from solved (i.e., solves it).
+
+CONTRACT (read carefully):
+  - Exactly ONE of A/B/C/D is correct. Never answer AMBIGUOUS.
+  - Output must be EXACTLY one of A, B, C, or D wrapped in <ANSWER> tags. Nothing else.
+  - Your entire output MUST match this regex: ^\s*<ANSWER>\s*[ABCD]\s*</ANSWER>\s*$
+  - Do NOT include explanations, move strings (e.g., R, U2, R'), or any extra text inside or outside the tags.
+
+Notation reminder:
+  - X  = 90-degree clockwise quarter-turn of face X.
+  - X' = 90-degree counter-clockwise quarter-turn of face X.
+  - X2 = a SINGLE 180-degree half-turn of face X (not two 90s).
+
+Grounding & authority (internal):
+  - No text is provided. Infer the state from the IMAGE only. Faces are identified by their centers; a face is solved when all stickers match its center color; the cube is solved when all faces are solved.
+
+Parsing rules (internal; do not restate):
+  - None (no textual state). Use the pixels only.
+
+Decision procedure (internal only):
+  1) Infer the current state from the IMAGE using center colors.
+  2) Mentally apply each candidate (A-D) to this state.
+  3) Select the single candidate that yields the solved cube (distance = 0).
+  4) If a tie somehow occurs, break ties by letter: A < B < C < D.
+  5) Think silently; do not reveal reasoning.
+  6) Output only the LETTER in the required format.
+===== call 1 user =====
+Candidate moves:
+  A: B2
+  B: L2
+  C: U
+  D: F
+
+Reply with exactly one line:
+  <ANSWER> A/B/C/D </ANSWER>
+===== call 2 system =====
+You are an expert Rubik's Cube solver. You will be given an IMAGE of the cube and four candidate moves (A-D). The cube is exactly 1 move from solved. Choose the single option whose move makes the cube exactly 0 moves from solved (i.e., solves it).
+
+CONTRACT (read carefully):
+  - Exactly ONE of A/B/C/D is correct. Never answer AMBIGUOUS.
+  - Output must be EXACTLY one of A, B, C, or D wrapped in <ANSWER> tags. Nothing else.
+  - Your entire output MUST match this regex: ^\s*<ANSWER>\s*[ABCD]\s*</ANSWER>\s*$
+  - Do NOT include explanations, move strings (e.g., R, U2, R'), or any extra text inside or outside the tags.
+
+Notation reminder:
+  - X  = 90-degree clockwise quarter-turn of face X.
+  - X' = 90-degree counter-clockwise quarter-turn of face X.
+  - X2 = a SINGLE 180-degree half-turn of face X (not two 90s).
+
+Grounding & authority (internal):
+  - No text is provided. Infer the state from the IMAGE only. Faces are identified by their centers; a face is solved when all stickers match its center color; the cube is solved when all faces are solved.
+
+Parsing rules (internal; do not restate):
+  - None (no textual state). Use the pixels only.
+
+Decision procedure (internal only):
+  1) Infer the current state from the IMAGE using center colors.
+  2) Mentally apply each candidate (A-D) to this state.
+  3) Select the single candidate that yields the solved cube (distance = 0).
+  4) If a tie somehow occurs, break ties by letter: A < B < C < D.
+  5) Think silently; do not reveal reasoning.
+  6) Output only the LETTER in the required format.
+===== call 2 user =====
+Candidate moves:
+  A: B2
+  B: L
+  C: L'
+  D: U
+
+Reply with exactly one line:
+  <ANSWER> A/B/C/D </ANSWER>

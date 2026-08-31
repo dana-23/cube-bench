@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
-import math
 import random
 import re
 import time
-from abc import ABC, abstractmethod
+from abc import ABC
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -15,15 +15,15 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from ..config import Config
 from ..io import save_results
+from . import metrics
+from .records import ItemRecord
 
 logger = logging.getLogger(__name__)
 
 
-# Unified MCQ answer parsers (accept all formats seen across tests)
+# Accepted MCQ answer formats.
 _ANSWER_TAG_RE = re.compile(r"<\s*ANSWER\s*>\s*([ABCD])\s*<\s*/\s*ANSWER\s*>", re.IGNORECASE)
 _ANSWER_COLON_RE = re.compile(r"\bANSWER\s*[:=]\s*([ABCD])\b", re.IGNORECASE)
-_ANSWER_BRACKET_RE = re.compile(r"<\s*([ABCD])\s*>", re.IGNORECASE)
-_MOVE_TAG_RE = re.compile(r"<ANSWER>\s*([URFDLB](?:2|')?)\s*</ANSWER>", re.IGNORECASE)
 _IDK_RE = re.compile(
     r"(?:<ANSWER>\s*(IDK)\s*</ANSWER>)|(?:\bANSWER\s*[:=]\s*(?:IDK|E)\b)|(?:I\s*DON'?T\s*KNOW)",
     re.IGNORECASE,
@@ -32,47 +32,110 @@ _YES_NO_RE = re.compile(r"Answer:\s*(Yes|No)\b", re.IGNORECASE)
 
 
 class BaseTest(ABC):
-    """Abstract base class for all cube-bench tests.
-
-    Provides shared utilities so each subclass only implements its unique logic
-    in ``run(num_samples)``.
-    """
+    """Shared prompting, parsing, scoring, and cube helpers for evaluations."""
 
     test_type: str = "base"
 
-    def __init__(self, assistant, config: Config, n_moves: int, verbose: bool = False):
+    def __init__(self, assistant, config: Config, n_moves: int = 3, verbose: bool = False):
         self.assistant = assistant
         self.config = config
         self.n_moves = int(n_moves)
         self.verbose = bool(verbose)
         self.latencies: List[float] = []
 
-    @abstractmethod
+    @property
+    def _logger(self) -> logging.Logger:
+        """Log under the concrete evaluation's module, not this base module."""
+        return logging.getLogger(type(self).__module__)
+
+    # ----- Run template -----
+
     def run(self, num_samples: int):
         """Run the evaluation over *num_samples* generated items."""
+        self.setup(num_samples)
+        records = self.collect(num_samples)
+        payload = self.aggregate(records, num_samples)
+        self.summary(payload, records)
+        self.persist(payload, records)
+        return self.result(payload, records)
+
+    def collect(self, num_samples: int) -> List[ItemRecord]:
+        """Run every item in order, keeping the records aggregation needs."""
+        records: List[ItemRecord] = []
+        for idx in self.progress(self.iter_indices(num_samples)):
+            record = self.run_item(idx)
+            if record is None:
+                continue
+            self.accumulate(record)
+            records.append(record)
+        return records
+
+    # ----- Loop seams -----
+
+    def iter_indices(self, num_samples: int) -> Iterable[int]:
+        """The item indices to run, in order."""
+        return range(num_samples)
+
+    def progress(self, indices: Iterable[int], total: Optional[int] = None) -> Iterable[int]:
+        """Wrap *indices* in this evaluation's progress bar."""
+        from tqdm import tqdm
+        return tqdm(indices, total=total, desc=self.desc())
+
+    def desc(self) -> str:
+        """The progress-bar label."""
+        return self.test_type
+
+    # ----- Hooks -----
+
+    def setup(self, num_samples: int) -> None:
+        """Prepare state that outlives a single item."""
+
+    def run_item(self, idx: int) -> Optional[ItemRecord]:
+        """Produce one scored record, or None to skip the item."""
+        raise NotImplementedError
+
+    def accumulate(self, record: ItemRecord) -> None:
+        """Fold *record* into running per-test state."""
+
+    def aggregate(self, records: List[ItemRecord], num_samples: int) -> Dict[str, Any]:
+        """Derive the payload that gets saved."""
+        raise NotImplementedError
+
+    def summary(  # pylint: disable=unused-argument
+        self, payload: Dict[str, Any], records: List[ItemRecord]
+    ) -> None:
+        """Log the run; never compute a saved value here."""
+
+    def persist(  # pylint: disable=unused-argument
+        self, payload: Dict[str, Any], records: List[ItemRecord]
+    ) -> Any:
+        """Write the payload to disk."""
+        return self.save(payload, self.result_filename())
+
+    def result_filename(self) -> Optional[str]:
+        """Override when the file name is not ``<test_type>.json``."""
+        return None
+
+    def result(  # pylint: disable=unused-argument
+        self, payload: Dict[str, Any], records: List[ItemRecord]
+    ) -> Any:
+        """What ``run`` returns to its caller."""
+        return None
+
+    def _vlog(self, fmt: str, *args: Any) -> None:
+        """Log at info level only while the run is verbose."""
+        if self.verbose:
+            self._logger.info(fmt, *args)
 
     # ----- MCQ answer parsing -----
 
     @staticmethod
-    def parse_letter(text: Optional[str], options: Optional[Dict[str, str]] = None) -> Optional[str]:
-        """Return 'A'|'B'|'C'|'D' parsed from any of the answer formats, else None.
-
-        If ``options`` is supplied and the model emitted a bare move (e.g. ``R'``),
-        map that move back to its option letter.
-        """
+    def parse_letter(text: Optional[str]) -> Optional[str]:
+        """Parse an A-D answer from ``<ANSWER> X </ANSWER>`` or ``ANSWER: X``."""
         if not text:
             return None
-        m = _ANSWER_TAG_RE.search(text) or _ANSWER_COLON_RE.search(text) or _ANSWER_BRACKET_RE.search(text)
-        if m:
-            return m.group(1).upper()
-        if options:
-            m2 = _MOVE_TAG_RE.search(text)
-            if m2:
-                move = m2.group(1).upper()
-                for letter, mv in options.items():
-                    if mv.upper() == move:
-                        return letter
-        return None
+        m = _ANSWER_TAG_RE.search(text) or _ANSWER_COLON_RE.search(text)
+        return m.group(1).upper() if m else None
 
     @staticmethod
     def parse_idk(text: Optional[str]) -> bool:
@@ -87,6 +150,18 @@ class BaseTest(ABC):
         m = _YES_NO_RE.search(text)
         return m.group(1).capitalize() if m else None
 
+    # ----- Deterministic item RNG -----
+
+    @staticmethod
+    def item_rng(*parts: Any) -> random.Random:
+        """Return a per-item RNG seeded only by ``parts``.
+
+        Every model therefore draws the same distractors, mismatches and option
+        orders for a given item, independently of execution order or wall clock.
+        """
+        digest = hashlib.sha256(":".join(str(p) for p in parts).encode()).digest()
+        return random.Random(int.from_bytes(digest[:8], "big"))
+
     # ----- MCQ option generators -----
 
     @staticmethod
@@ -96,12 +171,7 @@ class BaseTest(ABC):
         pool: Optional[Iterable[str]] = None,
         force_letter: Optional[str] = None,
     ) -> Tuple[Dict[str, str], str]:
-        """Build a 4-option MCQ from a correct move plus 3 distractors.
-
-        ``pool`` defaults to ``VirtualCube.AVAILABLE_MOVES``. If ``force_letter`` is
-        set, the correct move is placed at that letter; otherwise placement is
-        random.
-        """
+        """Build a four-option MCQ, optionally fixing the correct answer's letter."""
         from cube_bench.sim.cube_simulator import VirtualCube
 
         all_moves = list(pool) if pool is not None else list(VirtualCube.AVAILABLE_MOVES)
@@ -127,17 +197,19 @@ class BaseTest(ABC):
         vc,
         teacher_move: str,
         rng: random.Random,
+        *,
+        good_moves: Optional[Set[str]] = None,
     ) -> Tuple[Dict[str, str], str]:
-        """MCQ with exactly one progress-making distractor (when one exists),
-        and the rest non-progress. Used by step-by-step."""
+        """Build an MCQ with one progress-making distractor when available."""
         from cube_bench.sim.cube_simulator import VirtualCube
 
-        good = self.optimal_first_moves(vc) - {teacher_move}
+        oracle_moves = self.optimal_first_moves(vc) if good_moves is None else good_moves
+        good = oracle_moves - {teacher_move}
         bad = [m for m in VirtualCube.AVAILABLE_MOVES if m != teacher_move and m not in good]
 
         picks: List[str] = []
         if good:
-            picks.append(rng.choice(list(good)))
+            picks.append(rng.choice(sorted(good)))
         need = 3 - len(picks)
         if len(bad) >= need:
             picks += rng.sample(bad, need)
@@ -156,13 +228,12 @@ class BaseTest(ABC):
 
     @staticmethod
     def gen_mcq_from_good(good_moves: Set[str], rng: random.Random) -> Tuple[Dict[str, str], str]:
-        """Pick a correct move from ``good_moves`` (or any move if empty) and 3
-        non-good distractors. Used by learning-curve."""
+        """Choose from ``good_moves`` and add three non-good distractors."""
         from cube_bench.sim.cube_simulator import VirtualCube
 
         all_moves = list(VirtualCube.AVAILABLE_MOVES)
         if good_moves:
-            correct = rng.choice(tuple(good_moves))
+            correct = rng.choice(tuple(sorted(good_moves)))
             pool = [m for m in all_moves if (m != correct and m not in good_moves)]
             if len(pool) >= 3:
                 distractors = rng.sample(pool, 3)
@@ -188,8 +259,7 @@ class BaseTest(ABC):
 
     @staticmethod
     def state_text(cube) -> str:
-        """Public-API-first textual cube state, with a fallback to the internal
-        pycuber __str__."""
+        """Return the public cube text, falling back to the wrapped pycuber cube."""
         try:
             return str(cube)
         except Exception:
@@ -226,13 +296,18 @@ class BaseTest(ABC):
         return (d1 < d0), d0, d1
 
     @staticmethod
-    def teacher_first_move(scramble) -> Optional[str]:
-        """First move of the inverse-scramble teacher path."""
+    def teacher_path(scramble) -> List[str]:
+        """Return the inverse scramble without mutating the caller's ``Formula``."""
         try:
-            path = str(deepcopy(scramble).reverse()).split()
-            return path[0] if path else None
+            return str(deepcopy(scramble).reverse()).split()
         except Exception:
-            return None
+            return []
+
+    @classmethod
+    def teacher_first_move(cls, scramble) -> Optional[str]:
+        """First move of the inverse-scramble teacher path."""
+        path = cls.teacher_path(scramble)
+        return path[0] if path else None
 
     @staticmethod
     def inverse_move(move: str) -> str:
@@ -248,6 +323,15 @@ class BaseTest(ABC):
 
     # ----- Assistant call -----
 
+    def _generate(self, user_prompt: str, system_prompt: str, **kwargs) -> Any:
+        """Call the assistant with run-wide generation settings."""
+        kwargs.setdefault("thinking_budget", getattr(self.config, "thinking_budget", None))
+        return self.assistant.generate(
+            user_prompt=user_prompt,
+            system_prompt=system_prompt,
+            **kwargs,
+        )
+
     def ask(
         self,
         user_prompt: str,
@@ -260,10 +344,9 @@ class BaseTest(ABC):
         track_latency: bool = True,
         **kwargs,
     ) -> str:
-        """Single point of entry for ``assistant.generate``. Tracks latency in
-        ``self.latencies`` when ``track_latency`` is True."""
+        """Call ``assistant.generate`` and optionally record its latency."""
         t0 = time.time()
-        resp = self.assistant.generate(
+        resp = self._generate(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
             image=image,
@@ -281,12 +364,7 @@ class BaseTest(ABC):
     @staticmethod
     def wilson_ci(p: float, n: int, z: float = 1.96) -> Tuple[float, float]:
         """95% Wilson score interval for a Bernoulli proportion ``p`` over ``n``."""
-        if n <= 0 or not (0.0 <= p <= 1.0) or math.isnan(p):
-            return (float("nan"), float("nan"))
-        denom = 1.0 + (z * z) / n
-        center = (p + (z * z) / (2 * n)) / denom
-        margin = z * math.sqrt((p * (1 - p) / n) + (z * z) / (4 * n * n)) / denom
-        return (max(0.0, center - margin), min(1.0, center + margin))
+        return metrics.wilson_ci(p, n, z)
 
     # ----- Results -----
 
@@ -301,3 +379,52 @@ class BaseTest(ABC):
         out_path = Path(self.config.results_dir) / (filename or f"{self.test_type}.json")
         save_results(out_path, payload)
         return out_path
+
+
+class SingleAskTest(BaseTest):
+    """An evaluation whose every item is one prompt and one reply."""
+
+    def run_item(self, idx: int) -> Optional[ItemRecord]:
+        """Build, prompt, ask, parse and score item *idx*."""
+        item = self.build_item(idx)
+        if item is None:
+            return None
+        system_prompt, user_prompt = self.build_prompts(item)
+        response = self.ask_item(item, system_prompt, user_prompt)
+        return self.score_item(item, self.parse(response), response)
+
+    # ----- Item generation -----
+
+    def build_item(self, idx: int) -> Optional[Dict[str, Any]]:
+        """Generate item *idx*, or None to skip it."""
+        raise NotImplementedError
+
+    # ----- Prompting -----
+
+    def build_prompts(self, item: Dict[str, Any]) -> Tuple[str, str]:
+        """The (system, user) prompt pair for *item*."""
+        raise NotImplementedError
+
+    def ask_kwargs(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        """Generation arguments for *item*."""
+        return {"image": item.get("image")}
+
+    def ask_item(self, item: Dict[str, Any], system_prompt: str, user_prompt: str) -> str:
+        """Send one item to the model."""
+        return self.ask(
+            user_prompt=user_prompt, system_prompt=system_prompt, **self.ask_kwargs(item)
+        )
+
+    # ----- Parsing -----
+
+    def parse(self, response: Optional[str]) -> Any:
+        """Extract this evaluation's answer from *response*."""
+        return self.parse_letter(response)
+
+    # ----- Scoring -----
+
+    def score_item(
+        self, item: Dict[str, Any], prediction: Any, response: Optional[str]
+    ) -> ItemRecord:
+        """Score one parsed answer."""
+        raise NotImplementedError

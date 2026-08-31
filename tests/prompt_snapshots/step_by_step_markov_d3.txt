@@ -1,0 +1,141 @@
+===== call 0 system =====
+You are an expert Rubik's Cube solver. Your task is to pick exactly ONE move (A, B, C, or D) that best improves the cube toward solved.
+
+**Context:**
+  - The cube is currently 3 moves from solved under God's-distance.
+  - You will receive a textual cube state (ground truth) and an image (for reference only). Ignore any discrepancies: the text is authoritative.
+
+**Decision Rule (no ambiguity allowed):**
+  1) For each candidate (A,B,C,D), simulate applying the move to the textual state and estimate the resulting God's-distance d1.
+  2) Prefer the move with the **lowest d1** (equivalently, the largest decrease from the current distance).
+  3) If multiple candidates yield the same minimal d1, break ties **deterministically by letter**: A < B < C < D.
+
+**Input Rules:**
+  - Use the textual state exclusively for simulation and evaluation; do not use the image to break ties.
+
+**Output Format (STRICT):**
+  First, show your step-by-step reasoning inside <REASONING>...</REASONING> tags. Walk through each candidate (A, B, C, D), describe the resulting state at a high level, and estimate its d1.
+
+  Then, on the final line, output exactly the answer tag:
+
+  <ANSWER> A/B/C/D </ANSWER>
+
+  The final line must match this regex: ^\s*<ANSWER>\s*[ABCD]\s*</ANSWER>\s*$
+  Do not output AMBIGUOUS. Do not put anything after the </ANSWER> tag.
+===== call 0 user =====
+The cube is 3 moves away from being solved.
+
+**Textual Cube State (Ground Truth):**
+           [r][y][y]
+         [r][y][y]
+         [o][y][y]
+[b][b][g][w][r][r][g][g][g][o][o][y]
+[w][r][r][g][g][g][o][o][y][b][b][g]
+[w][o][o][b][b][b][r][r][y][b][b][g]
+         [w][w][w]
+         [w][w][w]
+         [r][o][o]
+
+
+**Candidate Moves:**
+  A: R2
+  B: D2
+  C: U
+  D: F'
+
+Show your reasoning in <REASONING>...</REASONING>, then output the final answer as:
+  <ANSWER> X </ANSWER>
+===== call 1 system =====
+You are an expert Rubik's Cube solver. Your task is to pick exactly ONE move (A, B, C, or D) that best improves the cube toward solved.
+
+**Context:**
+  - The cube is currently 2 moves from solved under God's-distance.
+  - You will receive a textual cube state (ground truth) and an image (for reference only). Ignore any discrepancies: the text is authoritative.
+
+**Decision Rule (no ambiguity allowed):**
+  1) For each candidate (A,B,C,D), simulate applying the move to the textual state and estimate the resulting God's-distance d1.
+  2) Prefer the move with the **lowest d1** (equivalently, the largest decrease from the current distance).
+  3) If multiple candidates yield the same minimal d1, break ties **deterministically by letter**: A < B < C < D.
+
+**Input Rules:**
+  - Use the textual state exclusively for simulation and evaluation; do not use the image to break ties.
+
+**Output Format (STRICT):**
+  First, show your step-by-step reasoning inside <REASONING>...</REASONING> tags. Walk through each candidate (A, B, C, D), describe the resulting state at a high level, and estimate its d1.
+
+  Then, on the final line, output exactly the answer tag:
+
+  <ANSWER> A/B/C/D </ANSWER>
+
+  The final line must match this regex: ^\s*<ANSWER>\s*[ABCD]\s*</ANSWER>\s*$
+  Do not output AMBIGUOUS. Do not put anything after the </ANSWER> tag.
+===== call 1 user =====
+The cube is 2 moves away from being solved.
+
+**Textual Cube State (Ground Truth):**
+           [o][r][r]
+         [y][y][y]
+         [y][y][y]
+[w][r][r][g][g][g][o][o][y][b][b][g]
+[w][r][r][g][g][g][o][o][y][b][b][g]
+[w][o][o][b][b][b][r][r][y][b][b][g]
+         [w][w][w]
+         [w][w][w]
+         [r][o][o]
+
+
+**Candidate Moves:**
+  A: R2
+  B: F'
+  C: U'
+  D: B
+
+Show your reasoning in <REASONING>...</REASONING>, then output the final answer as:
+  <ANSWER> X </ANSWER>
+===== call 2 system =====
+You are an expert Rubik's Cube solver. Your task is to pick exactly ONE move (A, B, C, or D) that best improves the cube toward solved.
+
+**Context:**
+  - The cube is currently 1 moves from solved under God's-distance.
+  - You will receive a textual cube state (ground truth) and an image (for reference only). Ignore any discrepancies: the text is authoritative.
+
+**Decision Rule (no ambiguity allowed):**
+  1) For each candidate (A,B,C,D), simulate applying the move to the textual state and estimate the resulting God's-distance d1.
+  2) Prefer the move with the **lowest d1** (equivalently, the largest decrease from the current distance).
+  3) If multiple candidates yield the same minimal d1, break ties **deterministically by letter**: A < B < C < D.
+
+**Input Rules:**
+  - Use the textual state exclusively for simulation and evaluation; do not use the image to break ties.
+
+**Output Format (STRICT):**
+  First, show your step-by-step reasoning inside <REASONING>...</REASONING> tags. Walk through each candidate (A, B, C, D), describe the resulting state at a high level, and estimate its d1.
+
+  Then, on the final line, output exactly the answer tag:
+
+  <ANSWER> A/B/C/D </ANSWER>
+
+  The final line must match this regex: ^\s*<ANSWER>\s*[ABCD]\s*</ANSWER>\s*$
+  Do not output AMBIGUOUS. Do not put anything after the </ANSWER> tag.
+===== call 2 user =====
+The cube is 1 moves away from being solved.
+
+**Textual Cube State (Ground Truth):**
+           [y][y][y]
+         [y][y][y]
+         [y][y][y]
+[r][r][r][g][g][g][o][o][o][b][b][b]
+[r][r][r][g][g][g][o][o][o][b][b][b]
+[o][o][o][b][b][b][r][r][r][g][g][g]
+         [w][w][w]
+         [w][w][w]
+         [w][w][w]
+
+
+**Candidate Moves:**
+  A: F'
+  B: L2
+  C: F2
+  D: D2
+
+Show your reasoning in <REASONING>...</REASONING>, then output the final answer as:
+  <ANSWER> X </ANSWER>

@@ -2,36 +2,48 @@
 
 from __future__ import annotations
 
-import logging
 import random
 from typing import Any, Dict, List, Optional, Tuple
 
-from tqdm import tqdm
-
-from cube_bench.core import BaseTest
+from cube_bench.core import scoring
+from cube_bench.core import ItemRecord, SingleAskTest
 from cube_bench.prompts.prompt_factory import PromptFactory
 from cube_bench.sim.cube_simulator import VirtualCube
 
-logger = logging.getLogger(__name__)
 
-
-class SolveMovesTest(BaseTest):
+class SolveMovesTest(SingleAskTest):
     """Dynamic MCQ using VirtualCube: generate states on-the-fly (1 move from solved)."""
 
     test_type = "prediction"
 
-    def __init__(self, assistant, config, prompt_type: str = "mixed", n_moves: int = 1, verbose: bool = False):
+    # ----- Construction -----
+
+    def __init__(self, assistant, config, prompt_type: str = "mixed", n_moves: int = 1,
+                 verbose: bool = False):
         super().__init__(assistant, config, n_moves, verbose)
         self.prompt_type = prompt_type
+        self._num_samples = 0
+        self._seen = 0
+        self._correct = 0
 
-    def _build_sample(self, idx: int) -> Dict[str, Any]:
+    def desc(self) -> str:
+        return "Solve move test"
+
+    def setup(self, num_samples: int) -> None:
+        self._num_samples = num_samples
+        self._seen = 0
+        self._correct = 0
+
+    # ----- Item generation -----
+
+    def _item_core(self, idx: int) -> Tuple[VirtualCube, Any, Dict[str, str], str, str]:
+        """Everything an item is made of except its rendering, which is the costly half."""
         cube = VirtualCube()
-        scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves)
+        scramble = cube.scramble(random_seed=idx, n_moves=self.n_moves, exact_depth=True)
 
         if self.n_moves == 1:
             teacher_move = self.teacher_first_move(scramble)
         else:
-            # Kociemba-optimal first move (cube.solve() returns "R U R'" etc.)
             optimal_path = cube.solve().split()
             if not optimal_path:
                 raise RuntimeError(f"Optimal solver returned empty path for sample {idx}")
@@ -40,10 +52,19 @@ class SolveMovesTest(BaseTest):
         rng = random.Random(idx)
         forced = "ABCD"[idx % 4]
         options, gold_letter = self.gen_mcq(teacher_move, rng, force_letter=forced)
+        return cube, scramble, options, gold_letter, teacher_move
+
+    def correct_letter(self, idx: int) -> str:
+        """The gold letter for an item, without paying to render it."""
+        return self._item_core(idx)[3]
+
+    def build_item(self, idx: int) -> Dict[str, Any]:
+        cube, scramble, options, gold_letter, teacher_move = self._item_core(idx)
 
         return {
             "id": idx,
-            "image": cube.to_image() if self.prompt_type in ("image", "mixed", "mixed_no_authority") else None,
+            "image": cube.to_image() if self.prompt_type in (
+                "image", "mixed", "mixed_no_authority") else None,
             "text_state": self.state_text(cube),
             "options": options,
             "correct_letter": gold_letter,
@@ -51,86 +72,98 @@ class SolveMovesTest(BaseTest):
             "scramble": str(scramble),
         }
 
-    def _build_prompts(self, sample: Dict[str, Any]) -> Tuple[str, str]:
+    # ----- Prompting -----
+
+    def build_prompts(self, item: Dict[str, Any]) -> Tuple[str, str]:
         kwargs = {
-            "move_A": sample["options"]["A"],
-            "move_B": sample["options"]["B"],
-            "move_C": sample["options"]["C"],
-            "move_D": sample["options"]["D"],
-            "textual_representation": sample["text_state"] if self.prompt_type != "image" else "",
+            "move_A": item["options"]["A"],
+            "move_B": item["options"]["B"],
+            "move_C": item["options"]["C"],
+            "move_D": item["options"]["D"],
+            "textual_representation": item["text_state"] if self.prompt_type != "image" else "",
             "metric": "HTM (Half-Turn Metric)",
         }
         return PromptFactory.get("prediction", prompt_type=self.prompt_type, **kwargs)
 
-    def run(
-        self, num_samples: int
-    ) -> Tuple[List[Tuple[str, int]], List[int], List[Optional[str]]]:
-        wrong_pairs: List[Tuple[str, int]] = []
-        acc_bits: List[int] = []
-        preds: List[Optional[str]] = []
-        per_item: List[Dict[str, Any]] = []
-        parsed = 0
+    # ----- Scoring -----
 
-        for i in tqdm(range(num_samples), desc="Solve move test"):
-            sample = self._build_sample(i)
-            sys_prompt, user_prompt = self._build_prompts(sample)
-
-            resp = self.ask(
-                user_prompt=user_prompt,
-                system_prompt=sys_prompt,
-                image=sample["image"],
-                temperature=0.1,
-            )
-
-            pred_letter = self.parse_letter(resp, sample["options"])
-            ok = int(pred_letter == sample["correct_letter"])
-            acc_bits.append(ok)
-            preds.append(pred_letter)
-            per_item.append(
-                {
-                    "id": sample["id"],
-                    "pred": pred_letter,
-                    "gold": sample["correct_letter"],
-                    "correct_move": sample["correct_move"],
-                    "options": sample["options"],
-                    "scramble": sample["scramble"],
-                    "ok": ok,
-                }
-            )
-            if pred_letter:
-                parsed += 1
-
-            logger.info("\nModel Predicted: %s\nOk : %s", pred_letter, ok)
-
-            if not ok:
-                wrong_pairs.append((pred_letter, sample["id"]))
-                if self.verbose:
-                    logger.info(
-                        "Wrong #%d: pred=%s gold=%s options=%s scramble=%s",
-                        sample["id"], pred_letter, sample["correct_letter"],
-                        sample["options"], sample["scramble"],
-                    )
-
-            if self.verbose and (i + 1) % 10 == 0:
-                logger.info("Progress: %d/%d (acc=%.3f)", i + 1, num_samples, sum(acc_bits) / len(acc_bits))
-
-        avg_acc = (sum(acc_bits) / len(acc_bits)) if acc_bits else 0.0
-        logger.info("SolveMoves avg accuracy (%s): %.3f", self.prompt_type, avg_acc)
-        logger.info("Parsed rate: %s", (parsed / num_samples) * 100 if num_samples else 0.0)
-
-        self.save(
-            {
-                "prompt_type": self.prompt_type,
-                "average_accuracy": avg_acc,
-                "num_samples": num_samples,
-                "per_item": per_item,
-                "meta": {
-                    "n_moves": self.n_moves,
-                    "generator": "VirtualCube",
-                    "prompt_source": "PromptFactory",
-                },
+    def score_item(
+        self, item: Dict[str, Any], prediction: Optional[str], response: Optional[str]
+    ) -> ItemRecord:
+        ok = int(prediction == item["correct_letter"])
+        self._logger.info("\nModel Predicted: %s\nOk : %s", prediction, ok)
+        return ItemRecord(
+            index=item["id"],
+            gold=item["correct_letter"],
+            pred=prediction,
+            correct=bool(ok),
+            parsed=bool(prediction),
+            response=response,
+            saved={
+                "id": item["id"],
+                "pred": prediction,
+                "gold": item["correct_letter"],
+                "correct_move": item["correct_move"],
+                "options": item["options"],
+                "scramble": item["scramble"],
+                "ok": ok,
+                "response": response,
             },
-            filename=f"solve_moves_{self.prompt_type}.json",
+            extra={"options": item["options"]},
         )
 
-        return wrong_pairs, acc_bits, preds
+    def accumulate(self, record: ItemRecord) -> None:
+        ok = record.saved["ok"]
+        self._seen += 1
+        self._correct += ok
+
+        if not ok:
+            self._vlog(
+                "Wrong #%d: pred=%s gold=%s options=%s scramble=%s",
+                record.index, record.pred, record.gold,
+                record.extra["options"], record.saved["scramble"],
+            )
+
+        if self.verbose and self._seen % 10 == 0:
+            self._vlog(
+                "Progress: %d/%d (acc=%.3f)",
+                self._seen, self._num_samples, self._correct / self._seen,
+            )
+
+    # ----- Aggregation -----
+
+    def aggregate(self, records: List[ItemRecord], num_samples: int) -> Dict[str, Any]:
+        scored = scoring.score(self.test_type, records)
+        return {
+            "prompt_type": self.prompt_type,
+            "average_accuracy": scored["average_accuracy"],
+            "num_samples": num_samples,
+            "per_item": [record.saved for record in records],
+            "meta": {
+                "n_moves": self.n_moves,
+                "generator": "VirtualCube",
+                "prompt_source": "PromptFactory",
+            },
+        }
+
+    # ----- Reporting -----
+
+    def summary(self, payload: Dict[str, Any], records: List[ItemRecord]) -> None:
+        num_samples = payload["num_samples"]
+        self._logger.info(
+            "SolveMoves avg accuracy (%s): %.3f", self.prompt_type, payload["average_accuracy"]
+        )
+        parsed = sum(1 for record in records if record.pred)
+        self._logger.info(
+            "Parsed rate: %s", (parsed / num_samples) * 100 if num_samples else 0.0
+        )
+
+    # ----- Results -----
+
+    def result_filename(self) -> str:
+        return f"solve_moves_{self.prompt_type}.json"
+
+    def result(self, payload: Dict[str, Any], records: List[ItemRecord]):
+        wrong_pairs = [(r.pred, r.index) for r in records if not r.saved["ok"]]
+        acc_bits = [r.saved["ok"] for r in records]
+        return wrong_pairs, acc_bits, [r.pred for r in records]

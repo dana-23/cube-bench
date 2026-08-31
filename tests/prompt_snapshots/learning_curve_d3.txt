@@ -1,0 +1,138 @@
+===== call 0 system =====
+You are an expert Rubik's Cube solver. Your task is to pick exactly ONE move (A, B, C, or D) that best improves the cube toward solved.
+
+**Context:**
+  - The cube is currently 3 moves from solved under God's-distance.
+  - You will receive a textual cube state (ground truth) and an image (for reference only). Ignore any discrepancies: the text is authoritative.
+
+**Decision Rule (no ambiguity allowed):**
+  1) For each candidate (A,B,C,D), internally simulate applying the move to the textual state and estimate the resulting God's-distance d1.
+  2) Prefer the move with the **lowest d1** (equivalently, the largest decrease from the current distance).
+  3) If multiple candidates yield the same minimal d1, break ties **deterministically by letter**: A < B < C < D.
+  4). Never output anything other than A/B/C/D.
+
+**Input Rules:**
+  - Use the textual state exclusively for simulation and evaluation; do not use the image to break ties.
+  - Think step-by-step internally but do **not** reveal your chain-of-thought.
+
+**Output Format (STRICT):**
+  Return exactly one line containing only this XML tag:
+
+  <ANSWER> A/B/C/D </ANSWER>
+
+  No explanations, no extra text, no AMBIGUOUS.
+===== call 0 user =====
+The cube is 3 moves away from being solved.
+
+**Textual Cube State (Ground Truth):**
+           [r][y][y]
+         [r][y][y]
+         [o][y][y]
+[b][b][g][w][r][r][g][g][g][o][o][y]
+[w][r][r][g][g][g][o][o][y][b][b][g]
+[w][o][o][b][b][b][r][r][y][b][b][g]
+         [w][w][w]
+         [w][w][w]
+         [r][o][o]
+
+
+**Candidate Moves:**
+  A: L
+  B: B'
+  C: U
+  D: D
+
+Output exactly one line:
+  <ANSWER> X </ANSWER>
+===== call 1 system =====
+You are an expert Rubik's Cube solver. Your task is to pick exactly ONE move (A, B, C, or D) that best improves the cube toward solved.
+
+**Context:**
+  - The cube is currently 4 moves from solved under God's-distance.
+  - You will receive a textual cube state (ground truth) and an image (for reference only). Ignore any discrepancies: the text is authoritative.
+
+**Decision Rule (no ambiguity allowed):**
+  1) For each candidate (A,B,C,D), internally simulate applying the move to the textual state and estimate the resulting God's-distance d1.
+  2) Prefer the move with the **lowest d1** (equivalently, the largest decrease from the current distance).
+  3) If multiple candidates yield the same minimal d1, break ties **deterministically by letter**: A < B < C < D.
+  4). Never output anything other than A/B/C/D.
+
+**Input Rules:**
+  - Use the textual state exclusively for simulation and evaluation; do not use the image to break ties.
+  - Think step-by-step internally but do **not** reveal your chain-of-thought.
+
+**Output Format (STRICT):**
+  Return exactly one line containing only this XML tag:
+
+  <ANSWER> A/B/C/D </ANSWER>
+
+  No explanations, no extra text, no AMBIGUOUS.
+===== call 1 user =====
+The cube is 4 moves away from being solved.
+
+**Textual Cube State (Ground Truth):**
+           [w][w][b]
+         [r][y][y]
+         [o][y][y]
+[r][b][g][w][r][r][g][g][r][y][g][g]
+[o][r][r][g][g][g][o][o][y][o][b][b]
+[o][o][o][b][b][b][r][r][y][o][b][b]
+         [w][w][w]
+         [w][w][w]
+         [y][y][g]
+
+
+**Candidate Moves:**
+  A: L
+  B: L2
+  C: B
+  D: D
+
+Output exactly one line:
+  <ANSWER> X </ANSWER>
+===== call 2 system =====
+You are an expert Rubik's Cube solver. Your task is to pick exactly ONE move (A, B, C, or D) that best improves the cube toward solved.
+
+**Context:**
+  - The cube is currently 5 moves from solved under God's-distance.
+  - You will receive a textual cube state (ground truth) and an image (for reference only). Ignore any discrepancies: the text is authoritative.
+
+**Decision Rule (no ambiguity allowed):**
+  1) For each candidate (A,B,C,D), internally simulate applying the move to the textual state and estimate the resulting God's-distance d1.
+  2) Prefer the move with the **lowest d1** (equivalently, the largest decrease from the current distance).
+  3) If multiple candidates yield the same minimal d1, break ties **deterministically by letter**: A < B < C < D.
+  4). Never output anything other than A/B/C/D.
+
+**Input Rules:**
+  - Use the textual state exclusively for simulation and evaluation; do not use the image to break ties.
+  - Think step-by-step internally but do **not** reveal your chain-of-thought.
+
+**Output Format (STRICT):**
+  Return exactly one line containing only this XML tag:
+
+  <ANSWER> A/B/C/D </ANSWER>
+
+  No explanations, no extra text, no AMBIGUOUS.
+===== call 2 user =====
+The cube is 5 moves away from being solved.
+
+**Textual Cube State (Ground Truth):**
+           [w][w][b]
+         [w][y][y]
+         [y][y][y]
+[o][o][o][b][r][r][g][g][r][y][g][b]
+[r][r][o][b][g][g][o][o][y][o][b][g]
+[g][b][r][g][b][b][r][r][y][o][b][w]
+         [w][w][w]
+         [r][w][w]
+         [o][y][g]
+
+
+**Candidate Moves:**
+  A: F2
+  B: D
+  C: U
+  D: L2
+
+Output exactly one line:
+  <ANSWER> X </ANSWER>

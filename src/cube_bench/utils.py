@@ -20,30 +20,22 @@ def format_rubiks_cube(scrambled_cube_str):
     Each line has 36 chars in the middle rows, 9 chars in the top/bottom rows (after stripping whitespace).
     """
     def parse_row(segment):
-        """Extract the 3 colors from a 9-char substring like '[x][x][x]'.
-
-        Single-letter color codes are mapped to full names.
-        """
+        """Expand the three colour codes in a ``[x][x][x]`` row."""
         color_map = {
             'y': 'Yellow', 'g': 'Green',
             'r': 'Red', 'o': 'Orange',
             'b': 'Blue', 'w': 'White'}
-        # We assume segment has exactly 9 characters, each color is at index 1, 4, 7.
         chars = [segment[1], segment[4], segment[7]]
         return [color_map.get(c, c) for c in chars]
 
-    # Split into lines and filter out any empty or whitespace-only lines
     lines = [line for line in scrambled_cube_str.split('\n') if line.strip()]
 
-    # Prepare arrays for each face
     top, left, front, right, back, bottom = [], [], [], [], [], []
 
-    # For the top (lines 0..2): parse the stripped line
     for i in range(3):
         segment = lines[i].strip()
         top.append(parse_row(segment))
 
-    # For the middle (lines 3..5): parse the full line in 9-char chunks
     for i in range(3, 6):
         line = lines[i].strip()
         left.append(parse_row(line[0:9]))
@@ -51,32 +43,29 @@ def format_rubiks_cube(scrambled_cube_str):
         right.append(parse_row(line[18:27]))
         back.append(parse_row(line[27:36]))
 
-    # For the bottom (lines 6..8): parse the stripped line
     for i in range(6, 9):
         segment = lines[i].strip()
         bottom.append(parse_row(segment))
 
-    # Combine faces into dictionary
     cube_dict = {
         "Top": top,
         "Left": left,
         "Front": front,
         "Right": right,
         "Back": back,
-        "Bottom": bottom  # Changed "Down" to "Bottom" for consistency
+        "Bottom": bottom
     }
 
     return cube_dict, format_cube_dict_as_string(cube_dict)
 
 def format_cube_dict_as_string(cube_dict):
-    """Formats the cube dictionary into a clear, readable string showing each face and its colors."""
+    """Format named face grids as readable text."""
     face_strings = []
     for face_name, rows in cube_dict.items():
         face_strings.append(f"{face_name}:")
         for row in rows:
-            # Format each row as a string for better readability
             face_strings.append(f"  {row}")
-        face_strings.append("")  # Add a blank line for clarity between faces
+        face_strings.append("")
 
     return "\n".join(face_strings)
 

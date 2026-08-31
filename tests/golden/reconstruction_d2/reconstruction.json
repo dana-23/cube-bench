@@ -1,0 +1,335 @@
+[
+    {
+        "model_name": "mock-model",
+        "test_type": "reconstruction",
+        "timestamp": "<TIMESTAMP>",
+        "average_accuracy_element_wise": 0.125,
+        "average_accuracy_overall": 0.0,
+        "num_samples": 8,
+        "n_moves": 2,
+        "correct_parse": 8,
+        "max_prior_deviation": 0.45833333333333337,
+        "per_item": [
+            {
+                "index": 1,
+                "gold": [
+                    [
+                        "red",
+                        "red",
+                        "red"
+                    ],
+                    [
+                        "green",
+                        "green",
+                        "green"
+                    ],
+                    [
+                        "orange",
+                        "orange",
+                        "orange"
+                    ]
+                ],
+                "pred": [
+                    [
+                        "Blue",
+                        "White",
+                        "Green"
+                    ],
+                    [
+                        "Blue",
+                        "Yellow",
+                        "Red"
+                    ],
+                    [
+                        "White",
+                        "Blue",
+                        "Yellow"
+                    ]
+                ],
+                "elementwise": 0.0,
+                "overall": 0.0,
+                "response": "Answer:\nRow 1: [Blue, White, Green]\nRow 2: [Blue, Yellow, Red]\nRow 3: [White, Blue, Yellow]\nAnswer verified for correctness."
+            },
+            {
+                "index": 2,
+                "gold": [
+                    [
+                        "blue",
+                        "green",
+                        "green"
+                    ],
+                    [
+                        "blue",
+                        "green",
+                        "green"
+                    ],
+                    [
+                        "blue",
+                        "green",
+                        "green"
+                    ]
+                ],
+                "pred": [
+                    [
+                        "Blue",
+                        "White",
+                        "Green"
+                    ],
+                    [
+                        "Blue",
+                        "Yellow",
+                        "Red"
+                    ],
+                    [
+                        "White",
+                        "Blue",
+                        "Yellow"
+                    ]
+                ],
+                "elementwise": 0.3333333333333333,
+                "overall": 0.0,
+                "response": "Answer:\nRow 1: [Blue, White, Green]\nRow 2: [Blue, Yellow, Red]\nRow 3: [White, Blue, Yellow]\nAnswer verified for correctness."
+            },
+            {
+                "index": 3,
+                "gold": [
+                    [
+                        "yellow",
+                        "blue",
+                        "blue"
+                    ],
+                    [
+                        "yellow",
+                        "green",
+                        "green"
+                    ],
+                    [
+                        "yellow",
+                        "green",
+                        "green"
+                    ]
+                ],
+                "pred": [
+                    [
+                        "Blue",
+                        "White",
+                        "Green"
+                    ],
+                    [
+                        "Blue",
+                        "Yellow",
+                        "Red"
+                    ],
+                    [
+                        "White",
+                        "Blue",
+                        "Yellow"
+                    ]
+                ],
+                "elementwise": 0.0,
+                "overall": 0.0,
+                "response": "Answer:\nRow 1: [Blue, White, Green]\nRow 2: [Blue, Yellow, Red]\nRow 3: [White, Blue, Yellow]\nAnswer verified for correctness."
+            },
+            {
+                "index": 4,
+                "gold": [
+                    [
+                        "blue",
+                        "green",
+                        "green"
+                    ],
+                    [
+                        "blue",
+                        "green",
+                        "green"
+                    ],
+                    [
+                        "blue",
+                        "green",
+                        "green"
+                    ]
+                ],
+                "pred": [
+                    [
+                        "Blue",
+                        "White",
+                        "Green"
+                    ],
+                    [
+                        "Blue",
+                        "Yellow",
+                        "Red"
+                    ],
+                    [
+                        "White",
+                        "Blue",
+                        "Yellow"
+                    ]
+                ],
+                "elementwise": 0.3333333333333333,
+                "overall": 0.0,
+                "response": "Answer:\nRow 1: [Blue, White, Green]\nRow 2: [Blue, Yellow, Red]\nRow 3: [White, Blue, Yellow]\nAnswer verified for correctness."
+            },
+            {
+                "index": 5,
+                "gold": [
+                    [
+                        "green",
+                        "green",
+                        "blue"
+                    ],
+                    [
+                        "green",
+                        "green",
+                        "blue"
+                    ],
+                    [
+                        "green",
+                        "blue",
+                        "blue"
+                    ]
+                ],
+                "pred": [
+                    [
+                        "Blue",
+                        "White",
+                        "Green"
+                    ],
+                    [
+                        "Blue",
+                        "Yellow",
+                        "Red"
+                    ],
+                    [
+                        "White",
+                        "Blue",
+                        "Yellow"
+                    ]
+                ],
+                "elementwise": 0.1111111111111111,
+                "overall": 0.0,
+                "response": "Answer:\nRow 1: [Blue, White, Green]\nRow 2: [Blue, Yellow, Red]\nRow 3: [White, Blue, Yellow]\nAnswer verified for correctness."
+            },
+            {
+                "index": 6,
+                "gold": [
+                    [
+                        "red",
+                        "green",
+                        "green"
+                    ],
+                    [
+                        "red",
+                        "green",
+                        "green"
+                    ],
+                    [
+                        "red",
+                        "green",
+                        "green"
+                    ]
+                ],
+                "pred": [
+                    [
+                        "Blue",
+                        "White",
+                        "Green"
+                    ],
+                    [
+                        "Blue",
+                        "Yellow",
+                        "Red"
+                    ],
+                    [
+                        "White",
+                        "Blue",
+                        "Yellow"
+                    ]
+                ],
+                "elementwise": 0.1111111111111111,
+                "overall": 0.0,
+                "response": "Answer:\nRow 1: [Blue, White, Green]\nRow 2: [Blue, Yellow, Red]\nRow 3: [White, Blue, Yellow]\nAnswer verified for correctness."
+            },
+            {
+                "index": 7,
+                "gold": [
+                    [
+                        "green",
+                        "green",
+                        "green"
+                    ],
+                    [
+                        "green",
+                        "green",
+                        "green"
+                    ],
+                    [
+                        "green",
+                        "green",
+                        "green"
+                    ]
+                ],
+                "pred": [
+                    [
+                        "Blue",
+                        "White",
+                        "Green"
+                    ],
+                    [
+                        "Blue",
+                        "Yellow",
+                        "Red"
+                    ],
+                    [
+                        "White",
+                        "Blue",
+                        "Yellow"
+                    ]
+                ],
+                "elementwise": 0.1111111111111111,
+                "overall": 0.0,
+                "response": "Answer:\nRow 1: [Blue, White, Green]\nRow 2: [Blue, Yellow, Red]\nRow 3: [White, Blue, Yellow]\nAnswer verified for correctness."
+            },
+            {
+                "index": 8,
+                "gold": [
+                    [
+                        "green",
+                        "green",
+                        "blue"
+                    ],
+                    [
+                        "green",
+                        "green",
+                        "blue"
+                    ],
+                    [
+                        "green",
+                        "green",
+                        "blue"
+                    ]
+                ],
+                "pred": [
+                    [
+                        "Blue",
+                        "White",
+                        "Green"
+                    ],
+                    [
+                        "Blue",
+                        "Yellow",
+                        "Red"
+                    ],
+                    [
+                        "White",
+                        "Blue",
+                        "Yellow"
+                    ]
+                ],
+                "elementwise": 0.0,
+                "overall": 0.0,
+                "response": "Answer:\nRow 1: [Blue, White, Green]\nRow 2: [Blue, Yellow, Red]\nRow 3: [White, Blue, Yellow]\nAnswer verified for correctness."
+            }
+        ]
+    }
+]
