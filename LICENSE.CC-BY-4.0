@@ -1,0 +1,11 @@
+Benchmark data and prompts in this repository are licensed under the
+Creative Commons Attribution 4.0 International License (CC BY 4.0).
+
+  Human-readable summary: https://creativecommons.org/licenses/by/4.0/
+  Full legal code:        https://creativecommons.org/licenses/by/4.0/legalcode
+
+Scope: generated benchmark items, per-depth seed lists, prompt templates,
+and evaluation metadata. This license does NOT cover the software in this
+repository; see LICENSE, LICENSE.MIT and NOTICE for the code terms.
+
+Attribution: please cite the Cube Bench paper.

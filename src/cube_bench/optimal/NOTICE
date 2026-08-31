@@ -1,0 +1,18 @@
+The files in this directory are derived from RubiksCube-OptimalSolver by
+Herbert Kociemba:
+
+    https://github.com/hkociemba/RubiksCube-OptimalSolver
+
+Upstream declares the license as "GNU General Public License v3 or later
+(GPLv3+)". The full license text is in LICENSE at the repository root.
+
+Known modifications made in Cube Bench:
+
+  - Import paths rewritten from top-level modules to the
+    cube_bench.optimal namespace.
+  - Pruning tables are created in and loaded from
+    src/cube_bench/optimal/graph/ (see pruning.py).
+
+The solver's search, its pruning-table construction and its face-turn
+metric semantics are used as provided upstream; solutions are returned
+with the "(<n>f*)" suffix marking a proven-optimal length.
